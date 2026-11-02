@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block title %}Presensi Mandiri Guru{% endblock %}
+{% block header_title %}Presensi Mandiri Hari Ini ({{ today }}){% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Ringkasan Status Presensi Hari Ini -->
+  <div class="bg-white border border-[#eaeaea] rounded-xl p-5 shadow-xs">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#eaeaea]">
+      <div>
+        <div class="text-xs text-zinc-500">Status Kehadiran Anda</div>
+        <div class="text-base font-semibold text-zinc-900 mt-0.5 flex items-center gap-2">
+          {% if attendance %}
+            {% if attendance.status == 'PRESENT' %}
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Hadir Tepat Waktu
+              </span>
+            {% elif attendance.status == 'LATE' %}
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Terlambat
+              </span>
+            {% elif attendance.status in ['SICK', 'EXCUSED'] %}
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200">
+                <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span> {{ attendance.status }}
+              </span>
+            {% endif %}
+          {% else %}
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-600 border border-zinc-200">
+              <span class="w-1.5 h-1.5 rounded-full bg-zinc-400"></span> Belum Presensi
+            </span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="flex items-center gap-6 font-mono text-xs">
+        <div>
+          <span class="text-zinc-500 block text-[10px] uppercase">Jam Masuk</span>
+          <span class="font-semibold text-zinc-800 tabular">{{ attendance.check_in_time if attendance else '--:--:--' }}</span>
+        </div>
+        <div>
+          <span class="text-zinc-500 block text-[10px] uppercase">Jam Pulang</span>
+          <span class="font-semibold text-zinc-800 tabular">{{ attendance.check_out_time if (attendance and attendance.check_out_time) else '--:--:--' }}</span>
+        </div>
+        <div>
+          <span class="text-zinc-500 block text-[10px] uppercase">Metode</span>
+          <span class="font-semibold text-zinc-800">{{ attendance.method if attendance else '-' }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alert / Pesan Notifikasi -->
+    <div id="notice-box" class="hidden mt-4 p-3 rounded-lg text-xs"></div>
+
+    <!-- Pilihan Aksi Presensi -->
+    <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+      
+      <!-- KARTU 1: PRESENSI LOKASI GPS (Radius 50m) -->
+      <div class="p-4 rounded-lg border border-zinc-200 bg-zinc-50/50 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center gap-2 text-zinc-900 font-semibold text-xs mb-1">
+            <i data-lucide="map-pin" class="w-4 h-4 text-zinc-700"></i>
+            <span>Check-in Lokasi GPS (Radius 50m)</span>
+          </div>
+          <p class="text-[11px] text-zinc-500 leading-relaxed">
+            Sistem otomatis mendeteksi koordinat Anda dan memastikan Anda berada dalam radius maksimal 50 meter dari gerbang/gedung sekolah.
+          </p>
+          <div id="gps-status" class="text-[11px] font-mono mt-2 text-zinc-500">
+            Status GPS: Siap mendeteksi
+          </div>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-zinc-200 flex gap-2">
+          {% if not attendance %}
+          <button id="btn-gps-in" onclick="doGpsCheckIn('IN')" class="flex-1 h-9 rounded-md bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium flex items-center justify-center gap-2 transition-colors">
+            <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
+            <span>Presensi Masuk (GPS)</span>
+          </button>
+          {% elif not attendance.check_out_time %}
+          <button id="btn-gps-out" onclick="doGpsCheckIn('OUT')" class="flex-1 h-9 rounded-md bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium flex items-center justify-center gap-2 transition-colors">
+            <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+            <span>Presensi Pulang (GPS)</span>
+          </button>
+          {% else %}
+          <div class="w-full py-2 text-center text-xs font-medium text-emerald-700 bg-emerald-50 rounded-md border border-emerald-200">
+            Presensi hari ini sudah lengkap (Masuk & Pulang).
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- KARTU 2: SCAN QR CODE -->
+      <div class="p-4 rounded-lg border border-zinc-200 bg-zinc-50/50 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center gap-2 text-zinc-900 font-semibold text-xs mb-1">
+            <i data-lucide="qr-code" class="w-4 h-4 text-zinc-700"></i>
+            <span>Scan QR Code Sekolah</span>
+          </div>
+          <p class="text-[11px] text-zinc-500 leading-relaxed">
+            Scan QR Code dinamis yang ditampilkan di layar monitor lobi atau meja piket guru sekolah.
+          </p>
+        </div>
+
+        <!-- Scanner Container -->
+        <div id="qr-reader-container" class="hidden mt-3 p-2 bg-black rounded-lg">
+          <div id="qr-reader" style="width: 100%"></div>
+          <button onclick="stopQrScanner()" class="mt-2 w-full py-1 text-xs text-white bg-zinc-800 hover:bg-zinc-700 rounded">Tutup Kamera</button>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-zinc-200">
+          {% if not attendance or not attendance.check_out_time %}
+          <button onclick="startQrScanner()" class="w-full h-9 rounded-md border border-zinc-300 hover:bg-zinc-100 bg-white text-zinc-800 text-xs font-medium flex items-center justify-center gap-2 transition-colors">
+            <i data-lucide="camera" class="w-3.5 h-3.5"></i>
+            <span>Buka Scanner Kamera</span>
+          </button>
+          {% else %}
+          <div class="w-full py-2 text-center text-xs font-medium text-emerald-700 bg-emerald-50 rounded-md border border-emerald-200">
+            Presensi hari ini sudah tuntas.
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Riwayat Singkat 5 Hari Terakhir -->
+  <div class="bg-white border border-[#eaeaea] rounded-xl overflow-hidden shadow-xs">
+    <div class="px-5 py-3 border-b border-[#eaeaea] bg-zinc-50/50 flex items-center justify-between">
+      <h3 class="text-xs font-semibold text-zinc-900">Riwayat Presensi Terbaru Anda</h3>
+      <a href="/my-history" class="text-[11px] font-medium text-zinc-600 hover:text-black">Lihat Semua &rarr;</a>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs">
+        <thead class="bg-zinc-50 text-zinc-500 uppercase text-[10px] tracking-wider border-b border-[#eaeaea]">
+          <tr>
+            <th class="px-4 py-2.5">Tanggal</th>
+            <th class="px-4 py-2.5">Jam Masuk</th>
+            <th class="px-4 py-2.5">Jam Pulang</th>
+            <th class="px-4 py-2.5">Status</th>
+            <th class="px-4 py-2.5">Metode</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-[#eaeaea] text-zinc-700 font-mono text-[11px]">
+          {% for r in history %}
+          <tr class="hover:bg-zinc-50/60">
+            <td class="px-4 py-2.5 font-sans font-medium text-zinc-900">{{ r.date }}</td>
+            <td class="px-4 py-2.5">{{ r.check_in_time or '-' }}</td>
+            <td class="px-4 py-2.5">{{ r.check_out_time or '-' }}</td>
+            <td class="px-4 py-2.5 font-sans">
+              {% if r.status == 'PRESENT' %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">Hadir</span>
+              {% elif r.status == 'LATE' %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">Terlambat</span>
+              {% else %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-sky-50 text-sky-700 border border-sky-200">{{ r.status }}</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2.5 text-zinc-500">{{ r.method }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="px-4 py-6 text-center text-zinc-400 font-sans text-xs">Belum ada riwayat kehadiran sebelumnya.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function showNotice(text, isError=false) {
+    const box = document.getElementById('notice-box');
+    box.classList.remove('hidden', 'bg-rose-50', 'text-rose-700', 'border-rose-200', 'bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
+    if (isError) {
+      box.classList.add('bg-rose-50', 'text-rose-700', 'border', 'border-rose-200');
+    } else {
+      box.classList.add('bg-emerald-50', 'text-emerald-700', 'border', 'border-emerald-200');
+    }
+    box.innerText = text;
+  }
+
+  // 1. GPS Handler
+  function doGpsCheckIn(type) {
+    const statusEl = document.getElementById('gps-status');
+    statusEl.innerText = "Mendeteksi koordinat GPS perangkat...";
+
+    if (!navigator.geolocation) {
+      showNotice("Browser Anda tidak mendukung Geolocation.", true);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        statusEl.innerText = `GPS Terkunci: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+
+        try {
+          const res = await fetch('/api/attendance/check-in-gps', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ latitude: lat, longitude: lon, action: type })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            showNotice(data.message || "Presensi GPS berhasil tercatat!");
+            setTimeout(() => window.location.reload(), 1200);
+          } else {
+            showNotice(data.detail || "Gagal melakukan presensi.", true);
+          }
+        } catch (e) {
+          showNotice("Gagal menghubungi server.", true);
+        }
+      },
+      (err) => {
+        statusEl.innerText = "Gagal mengambil GPS: " + err.message;
+        showNotice("Mohon aktifkan izin GPS lokasi di browser HP/laptop Anda.", true);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
+
+  // 2. QR Code Handler
+  let html5QrcodeScanner = null;
+  function startQrScanner() {
+    document.getElementById('qr-reader-container').classList.remove('hidden');
+    html5QrcodeScanner = new Html5Qrcode("qr-reader");
+    html5QrcodeScanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      async (decodedText) => {
+        // Stop scan on success
+        await stopQrScanner();
+        submitQrToken(decodedText);
+      },
+      (errorMessage) => {}
+    ).catch(err => {
+      showNotice("Gagal mengakses kamera: " + err, true);
+    });
+  }
+
+  async function stopQrScanner() {
+    if (html5QrcodeScanner) {
+      try {
+        await html5QrcodeScanner.stop();
+        html5QrcodeScanner.clear();
+      } catch (e) {}
+      html5QrcodeScanner = null;
+    }
+    document.getElementById('qr-reader-container').classList.add('hidden');
+  }
+
+  async function submitQrToken(token) {
+    try {
+      const res = await fetch('/api/attendance/check-in-qr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showNotice(data.message || "Presensi QR berhasil!");
+        setTimeout(() => window.location.reload(), 1200);
+      } else {
+        showNotice(data.detail || "QR Code tidak valid atau kadaluarsa.", true);
+      }
+    } catch (e) {
+      showNotice("Gagal verifikasi QR ke server.", true);
+    }
+  }
+</script>
+{% endblock %}

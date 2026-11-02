@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="id" class="h-full bg-[#ffffff] text-[#171717]">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}NataSekolah{% endblock %} — Absensi Guru</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- HTML5 QR Code Scanner -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+          },
+          colors: {
+            canvas: '#ffffff',
+            surface: '#fafafa',
+            'surface-muted': '#f4f4f5',
+            border: '#eaeaea',
+            'border-strong': '#d4d4d8',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .tabular { font-variant-numeric: tabular-nums; }
+    /* Minimalist Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #fafafa; }
+    ::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+  </style>
+</head>
+<body class="h-full flex antialiased selection:bg-zinc-900 selection:text-white">
+
+  <!-- Mobile Sidebar Backdrop -->
+  <div id="sidebar-backdrop" onclick="toggleSidebar()" class="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs hidden md:hidden"></div>
+
+  <!-- PANEL SAMPING (Sidebar Navigation) -->
+  <aside id="main-sidebar" class="fixed inset-y-0 left-0 z-50 w-64 bg-[#fafafa] border-r border-[#eaeaea] flex flex-col transition-transform duration-200 ease-in-out -translate-x-full md:translate-x-0">
+    
+    <!-- Header Brand -->
+    <div class="h-14 px-5 border-b border-[#eaeaea] flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-md bg-black text-white flex items-center justify-center font-bold text-xs tracking-wider shadow-2xs">
+          NS
+        </div>
+        <div>
+          <h1 class="text-xs font-semibold tracking-tight text-[#171717] leading-none">NataSekolah</h1>
+          <span class="text-[10px] text-[#71717a] font-medium leading-tight">Vercel Edition</span>
+        </div>
+      </div>
+      <button onclick="toggleSidebar()" class="p-1 rounded-md hover:bg-zinc-200 md:hidden text-zinc-500">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- Info Lembaga -->
+    <div class="px-5 py-3 border-b border-[#eaeaea] bg-white/60">
+      <div class="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Lembaga</div>
+      <div class="text-xs font-semibold text-zinc-900 truncate mt-0.5">{{ user.institution_name }}</div>
+      <div class="flex items-center gap-1.5 mt-1.5">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span class="text-[10px] text-zinc-500 font-mono">Radius Presensi 50m</span>
+      </div>
+    </div>
+
+    <!-- Navigation Menu Items -->
+    <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      {% if user.role == 'TEACHER' %}
+      <a href="/attendance" class="flex items-center gap-2.5 px-3 py-2 text-xs rounded-md transition-colors {% if active_menu == 'checkin' %}bg-zinc-200/80 text-black font-semibold shadow-2xs{% else %}text-zinc-600 hover:text-black hover:bg-zinc-100{% endif %}">
+        <i data-lucide="clock" class="w-4 h-4"></i>
+        <span>Presensi Mandiri</span>
+      </a>
+      <a href="/my-history" class="flex items-center gap-2.5 px-3 py-2 text-xs rounded-md transition-colors {% if active_menu == 'my_history' %}bg-zinc-200/80 text-black font-semibold shadow-2xs{% else %}text-zinc-600 hover:text-black hover:bg-zinc-100{% endif %}">
+        <i data-lucide="history" class="w-4 h-4"></i>
+        <span>Riwayat Kehadiran</span>
+      </a>
+      {% endif %}
+
+      {% if user.role == 'ADMIN' %}
+      <a href="/admin/recap" class="flex items-center gap-2.5 px-3 py-2 text-xs rounded-md transition-colors {% if active_menu == 'recap' %}bg-zinc-200/80 text-black font-semibold shadow-2xs{% else %}text-zinc-600 hover:text-black hover:bg-zinc-100{% endif %}">
+        <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+        <span>Monitor Presensi Guru</span>
+      </a>
+      <a href="/admin/qr" class="flex items-center gap-2.5 px-3 py-2 text-xs rounded-md transition-colors {% if active_menu == 'qr' %}bg-zinc-200/80 text-black font-semibold shadow-2xs{% else %}text-zinc-600 hover:text-black hover:bg-zinc-100{% endif %}">
+        <i data-lucide="qr-code" class="w-4 h-4"></i>
+        <span>QR Code Harian</span>
+      </a>
+      <a href="/admin/teachers" class="flex items-center gap-2.5 px-3 py-2 text-xs rounded-md transition-colors {% if active_menu == 'teachers' %}bg-zinc-200/80 text-black font-semibold shadow-2xs{% else %}text-zinc-600 hover:text-black hover:bg-zinc-100{% endif %}">
+        <i data-lucide="users" class="w-4 h-4"></i>
+        <span>Daftar Guru & Staf</span>
+      </a>
+      {% endif %}
+    </nav>
+
+    <!-- User Profile & Logout Bottom -->
+    <div class="p-3 border-t border-[#eaeaea] bg-white">
+      <div class="flex items-center justify-between p-2 rounded-md hover:bg-zinc-50 transition-colors">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-7 h-7 rounded-full bg-zinc-900 text-white flex items-center justify-center text-[11px] font-semibold flex-shrink-0">
+            {{ user.full_name[:2].upper() }}
+          </div>
+          <div class="min-w-0">
+            <div class="text-xs font-semibold text-zinc-900 truncate">{{ user.full_name }}</div>
+            <div class="text-[10px] text-zinc-500 font-mono uppercase tracking-wider">{{ user.role }}</div>
+          </div>
+        </div>
+        <a href="/logout" title="Keluar" class="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors">
+          <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+        </a>
+      </div>
+    </div>
+  </aside>
+
+  <!-- KONTEN UTAMA -->
+  <div class="flex-1 flex flex-col md:pl-64 min-w-0">
+    <!-- Top Bar Mobile -->
+    <header class="h-14 border-b border-[#eaeaea] px-4 md:px-8 flex items-center justify-between bg-white/80 backdrop-blur-md sticky top-0 z-30">
+      <div class="flex items-center gap-3">
+        <button onclick="toggleSidebar()" class="p-1.5 rounded-md hover:bg-zinc-100 md:hidden text-zinc-700">
+          <i data-lucide="menu" class="w-5 h-5"></i>
+        </button>
+        <span class="text-xs font-semibold text-zinc-800">{% block header_title %}Presensi Guru{% endblock %}</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] font-mono text-zinc-500 tabular" id="realtime-clock">--:--:-- WIB</span>
+        <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+      </div>
+    </header>
+
+    <!-- Page Body -->
+    <main class="flex-1 p-4 md:p-8 max-w-6xl w-full mx-auto">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script>
+    lucide.createIcons();
+    function toggleSidebar() {
+      const sb = document.getElementById('main-sidebar');
+      const bd = document.getElementById('sidebar-backdrop');
+      sb.classList.toggle('-translate-x-full');
+      bd.classList.toggle('hidden');
+    }
+    // Jam Realtime
+    function updateClock() {
+      const el = document.getElementById('realtime-clock');
+      if (el) {
+        const d = new Date();
+        el.innerText = d.toLocaleTimeString('id-ID') + ' WIB';
+      }
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

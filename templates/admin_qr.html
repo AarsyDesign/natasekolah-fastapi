@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}QR Code Presensi Harian{% endblock %}
+{% block header_title %}QR Code Presensi Meja Piket / Layar Lobi{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto text-center space-y-6">
+
+  <div class="bg-white border border-[#eaeaea] rounded-2xl p-6 shadow-xs">
+    <div class="text-xs text-zinc-500 uppercase tracking-wider font-semibold">QR Code Presensi Tanggal {{ today }}</div>
+    <h2 class="text-base font-semibold text-zinc-900 mt-1">{{ institution.name }}</h2>
+
+    <!-- Wadah Gambar QR Code -->
+    <div class="mt-6 p-4 bg-zinc-50 border border-zinc-200 rounded-xl inline-block shadow-2xs">
+      <img src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&data={{ token }}" alt="QR Code Presensi" class="w-60 h-60 mx-auto rounded">
+    </div>
+
+    <div class="mt-4">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span>Token Aktif: {{ token }}</span>
+      </div>
+    </div>
+
+    <p class="mt-4 text-xs text-zinc-500 leading-relaxed max-w-xs mx-auto">
+      Guru atau staf cukup membuka menu <b>Presensi Mandiri &rarr; Scan QR Code</b> dari smartphone mereka dan mengarahkan kamera ke layar ini.
+    </p>
+
+    <div class="mt-6 pt-4 border-t border-zinc-100 flex justify-center gap-2">
+      <button onclick="window.print()" class="h-8 px-3 rounded-md border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-xs font-medium flex items-center gap-1.5">
+        <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+        <span>Cetak QR</span>
+      </button>
+      <form action="/admin/qr/regenerate" method="POST">
+        <button type="submit" class="h-8 px-3 rounded-md bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium flex items-center gap-1.5">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          <span>Perbarui Token QR</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

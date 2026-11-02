@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+
+{% block title %}Monitor Presensi Guru{% endblock %}
+{% block header_title %}Rekap Harian Kehadiran Guru & Staf{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Header Filter & Stat Cards -->
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div>
+      <h2 class="text-base font-semibold text-zinc-900">Monitor Presensi Dewan Guru</h2>
+      <p class="text-xs text-zinc-500">Tanggal: <span class="font-mono font-medium text-zinc-800">{{ selected_date }}</span></p>
+    </div>
+    
+    <div class="flex items-center gap-2">
+      <form method="GET" action="/admin/recap" class="flex items-center gap-2">
+        <input type="date" name="date" value="{{ selected_date }}" onchange="this.form.submit()"
+               class="h-8 px-2.5 rounded-md border border-zinc-200 text-xs bg-white text-zinc-800 focus:outline-none focus:ring-1 focus:ring-black">
+      </form>
+      <a href="/admin/qr" class="h-8 px-3 rounded-md bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium flex items-center gap-1.5 transition-colors">
+        <i data-lucide="qr-code" class="w-3.5 h-3.5"></i>
+        <span>Tampilkan QR</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Statistik Kotak Vercel Style -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div class="p-4 rounded-xl border border-zinc-200 bg-white">
+      <div class="text-[10px] uppercase font-semibold text-zinc-500 tracking-wider">Total Guru</div>
+      <div class="text-xl font-bold text-zinc-900 mt-1 tabular">{{ stats.total }}</div>
+    </div>
+    <div class="p-4 rounded-xl border border-zinc-200 bg-white">
+      <div class="text-[10px] uppercase font-semibold text-emerald-600 tracking-wider">Hadir Tepat Waktu</div>
+      <div class="text-xl font-bold text-emerald-700 mt-1 tabular">{{ stats.present }}</div>
+    </div>
+    <div class="p-4 rounded-xl border border-zinc-200 bg-white">
+      <div class="text-[10px] uppercase font-semibold text-amber-600 tracking-wider">Terlambat</div>
+      <div class="text-xl font-bold text-amber-700 mt-1 tabular">{{ stats.late }}</div>
+    </div>
+    <div class="p-4 rounded-xl border border-zinc-200 bg-white">
+      <div class="text-[10px] uppercase font-semibold text-rose-600 tracking-wider">Belum Presensi / Alpa</div>
+      <div class="text-xl font-bold text-rose-700 mt-1 tabular">{{ stats.absent }}</div>
+    </div>
+  </div>
+
+  <!-- Tabel Kehadiran Guru -->
+  <div class="bg-white border border-[#eaeaea] rounded-xl overflow-hidden shadow-xs">
+    <div class="px-5 py-3.5 border-b border-[#eaeaea] bg-zinc-50/50 flex items-center justify-between">
+      <span class="text-xs font-semibold text-zinc-900">Daftar Kehadiran Seluruh Guru</span>
+      <span class="text-[11px] text-zinc-500">Terakhir diperbarui: otomatis</span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs">
+        <thead class="bg-zinc-50 text-zinc-500 uppercase text-[10px] tracking-wider border-b border-[#eaeaea]">
+          <tr>
+            <th class="px-4 py-3">Nama Guru</th>
+            <th class="px-4 py-3">NIP / ID</th>
+            <th class="px-4 py-3">Jam Masuk</th>
+            <th class="px-4 py-3">Jam Pulang</th>
+            <th class="px-4 py-3">Status</th>
+            <th class="px-4 py-3">Metode & Jarak</th>
+            <th class="px-4 py-3 text-right">Aksi Piket</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-[#eaeaea] text-zinc-700">
+          {% for t in teachers %}
+          <tr class="hover:bg-zinc-50/60 transition-colors">
+            <td class="px-4 py-3">
+              <div class="font-medium text-zinc-900">{{ t.full_name }}</div>
+              <div class="text-[10px] text-zinc-400 font-mono">{{ t.username }}</div>
+            </td>
+            <td class="px-4 py-3 font-mono text-[11px] text-zinc-500">{{ t.nip or '-' }}</td>
+            <td class="px-4 py-3 font-mono text-[11px]">
+              {% if t.check_in_time %}
+                <span class="text-zinc-900 font-semibold tabular">{{ t.check_in_time }}</span>
+              {% else %}
+                <span class="text-zinc-400">--:--:--</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 font-mono text-[11px]">
+              {% if t.check_out_time %}
+                <span class="text-zinc-900 font-semibold tabular">{{ t.check_out_time }}</span>
+              {% else %}
+                <span class="text-zinc-400">--:--:--</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3">
+              {% if t.status == 'PRESENT' %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">Hadir Tepat</span>
+              {% elif t.status == 'LATE' %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">Terlambat</span>
+              {% elif t.status == 'SICK' %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">Sakit</span>
+              {% elif t.status == 'EXCUSED' %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-sky-50 text-sky-700 border border-sky-200">Izin</span>
+              {% else %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-100 text-zinc-500 border border-zinc-200">Belum Hadir</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-[11px] font-mono text-zinc-500">
+              {% if t.method %}
+                <span class="text-zinc-800 font-medium">{{ t.method }}</span>
+                {% if t.distance_meters is not none %}
+                  <span class="text-zinc-400">({{ t.distance_meters|round(1) }}m)</span>
+                {% endif %}
+              {% else %}
+                <span class="text-zinc-400">-</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-right">
+              <button onclick="openSidePanel('{{ t.user_id }}', '{{ t.full_name }}', '{{ t.code or '' }}', '{{ t.status }}', '{{ t.check_in_time or '' }}', '{{ t.check_out_time or '' }}', '{{ t.notes or '' }}')"
+                      class="px-2.5 py-1 rounded-md border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 text-[11px] font-medium transition-colors">
+                Panel Samping
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- SLIDE-OVER SIDE PANEL (PANEL SAMPING PRESENSI GURU) -->
+<div id="side-panel-backdrop" onclick="closeSidePanel()" class="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs transition-opacity duration-300 opacity-0 pointer-events-none"></div>
+
+<aside id="side-panel" class="fixed top-0 right-0 z-50 h-full w-full max-w-md bg-white border-l border-zinc-200 shadow-2xl transform translate-x-full transition-transform duration-300 ease-in-out flex flex-col">
+  <!-- Header Panel -->
+  <div class="px-6 py-4 border-b border-zinc-100 flex items-center justify-between">
+    <div>
+      <div class="text-[10px] font-mono tracking-wider uppercase text-zinc-400">Panel Samping Presensi</div>
+      <h3 id="panel-teacher-name" class="text-sm font-semibold text-zinc-900 mt-0.5">Nama Guru</h3>
+    </div>
+    <button onclick="closeSidePanel()" class="w-8 h-8 rounded-md border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center text-zinc-500 hover:text-zinc-900 transition-colors">
+      <i data-lucide="x" class="w-4 h-4"></i>
+    </button>
+  </div>
+
+  <!-- Body Panel Samping -->
+  <div class="flex-1 overflow-y-auto p-6 space-y-6">
+    <!-- Info Ringkas Guru -->
+    <div class="rounded-lg bg-zinc-50 border border-zinc-200 p-4 space-y-2">
+      <div class="flex justify-between items-center text-xs">
+        <span class="text-zinc-500">Kode / NIP:</span>
+        <span id="panel-teacher-code" class="font-mono font-medium text-zinc-800">-</span>
+      </div>
+      <div class="flex justify-between items-center text-xs">
+        <span class="text-zinc-500">Tanggal Rekap:</span>
+        <span class="font-mono font-medium text-zinc-800">{{ selected_date }}</span>
+      </div>
+      <div class="flex justify-between items-center text-xs">
+        <span class="text-zinc-500">Jam Masuk / Pulang:</span>
+        <span id="panel-teacher-times" class="font-mono font-medium text-zinc-800">-</span>
+      </div>
+    </div>
+
+    <!-- Form Aksi Cepat Petugas Piket / Admin -->
+    <form action="/api/admin/manual-attendance" method="POST" class="space-y-4">
+      <input type="hidden" name="user_id" id="panel-user-id">
+      <input type="hidden" name="date" value="{{ selected_date }}">
+
+      <div>
+        <label class="block text-xs font-semibold text-zinc-700 mb-1.5">Tetapkan / Ubah Status Kehadiran</label>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <label class="flex items-center gap-2 p-2.5 rounded-lg border border-zinc-200 hover:border-zinc-400 cursor-pointer">
+            <input type="radio" name="status" value="PRESENT" class="text-black focus:ring-black">
+            <span>Hadir Tepat</span>
+          </label>
+          <label class="flex items-center gap-2 p-2.5 rounded-lg border border-zinc-200 hover:border-zinc-400 cursor-pointer">
+            <input type="radio" name="status" value="LATE" class="text-black focus:ring-black">
+            <span>Terlambat</span>
+          </label>
+          <label class="flex items-center gap-2 p-2.5 rounded-lg border border-zinc-200 hover:border-zinc-400 cursor-pointer">
+            <input type="radio" name="status" value="SICK" class="text-black focus:ring-black">
+            <span>Sakit</span>
+          </label>
+          <label class="flex items-center gap-2 p-2.5 rounded-lg border border-zinc-200 hover:border-zinc-400 cursor-pointer">
+            <input type="radio" name="status" value="EXCUSED" class="text-black focus:ring-black">
+            <span>Izin / Dinas</span>
+          </label>
+          <label class="col-span-2 flex items-center gap-2 p-2.5 rounded-lg border border-zinc-200 hover:border-zinc-400 cursor-pointer">
+            <input type="radio" name="status" value="ABSENT" class="text-black focus:ring-black">
+            <span>Alpa (Tanpa Keterangan)</span>
+          </label>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-zinc-700 mb-1.5">Alasan / Catatan Petugas Piket</label>
+        <textarea name="notes" id="panel-notes" placeholder="Tuliskan keterangan izin, disposisi kepala sekolah, atau alasan keterlambatan..." class="w-full p-3 rounded-lg border border-zinc-200 text-xs focus:ring-2 focus:ring-black focus:outline-hidden" rows="3"></textarea>
+      </div>
+
+      <button type="submit" class="w-full py-2.5 rounded-md bg-zinc-900 hover:bg-zinc-800 text-white font-medium text-xs transition-colors flex items-center justify-center gap-2">
+        <i data-lucide="check" class="w-4 h-4"></i> Simpan Status ke Database
+      </button>
+    </form>
+  </div>
+</aside>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function openSidePanel(userId, name, code, status, inTime, outTime, notes) {
+    document.getElementById('panel-user-id').value = userId;
+    document.getElementById('panel-teacher-name').textContent = name;
+    document.getElementById('panel-teacher-code').textContent = code || '-';
+    document.getElementById('panel-teacher-times').textContent = (inTime || '--:--') + ' / ' + (outTime || '--:--');
+    document.getElementById('panel-notes').value = notes || '';
+
+    const radios = document.querySelectorAll('input[name="status"]');
+    radios.forEach(r => {
+      r.checked = (r.value === status);
+    });
+
+    const panel = document.getElementById('side-panel');
+    const backdrop = document.getElementById('side-panel-backdrop');
+
+    backdrop.classList.remove('opacity-0', 'pointer-events-none');
+    backdrop.classList.add('opacity-100');
+
+    panel.classList.remove('translate-x-full');
+    panel.classList.add('translate-x-0');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function closeSidePanel() {
+    const panel = document.getElementById('side-panel');
+    const backdrop = document.getElementById('side-panel-backdrop');
+
+    backdrop.classList.add('opacity-0', 'pointer-events-none');
+    backdrop.classList.remove('opacity-100');
+
+    panel.classList.add('translate-x-full');
+    panel.classList.remove('translate-x-0');
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSidePanel();
+  });
+</script>
+{% endblock %}
