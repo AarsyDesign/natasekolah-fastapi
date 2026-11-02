@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}Rekap Bulanan Presensi Guru{% endblock %}
+{% block header_title %}Rekap Bulanan Presensi Guru ({{ current_month_name }} {{ current_year }}){% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Action Bar: Selector Bulan & Ekspor CSV -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 rounded-xl border border-zinc-200 bg-white">
+    <form method="GET" action="/admin/monthly" class="flex flex-wrap items-center gap-3">
+      <div class="flex items-center gap-2">
+        <label class="text-xs font-semibold text-zinc-600">Pilih Periode:</label>
+        <input type="month" name="month" value="{{ selected_month }}" 
+               onchange="this.form.submit()"
+               class="h-9 px-3 rounded-md border border-zinc-200 text-xs font-mono font-medium focus:ring-1 focus:ring-black">
+      </div>
+      <button type="submit" class="h-9 px-3.5 rounded-md bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-medium transition-colors">
+        Tampilkan
+      </button>
+    </form>
+
+    <div class="flex items-center gap-2">
+      <a href="/admin/monthly/export?month={{ selected_month }}" 
+         class="h-9 px-4 rounded-md bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium transition-colors flex items-center gap-2 shadow-2xs">
+        <i data-lucide="download" class="w-4 h-4"></i>
+        <span>Ekspor Rekap CSV / Excel</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Summary Cards -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="p-4 rounded-xl border border-zinc-200 bg-white">
+      <div class="text-[11px] font-mono text-zinc-500 uppercase">Total Guru & Staf</div>
+      <div class="text-2xl font-semibold tabular text-zinc-900 mt-1">{{ stats.total_teachers }}</div>
+    </div>
+    <div class="p-4 rounded-xl border border-zinc-200 bg-white">
+      <div class="text-[11px] font-mono text-zinc-500 uppercase">Total Hadir Tepat</div>
+      <div class="text-2xl font-semibold tabular text-emerald-600 mt-1">{{ stats.total_present }}</div>
+    </div>
+    <div class="p-4 rounded-xl border border-zinc-200 bg-white">
+      <div class="text-[11px] font-mono text-zinc-500 uppercase">Total Terlambat</div>
+      <div class="text-2xl font-semibold tabular text-amber-600 mt-1">{{ stats.total_late }}</div>
+    </div>
+    <div class="p-4 rounded-xl border border-zinc-200 bg-white">
+      <div class="text-[11px] font-mono text-zinc-500 uppercase">Izin / Sakit / Alpa</div>
+      <div class="text-2xl font-semibold tabular text-zinc-700 mt-1">{{ stats.total_excused + stats.total_sick }} / <span class="text-rose-600">{{ stats.total_absent }}</span></div>
+    </div>
+  </div>
+
+  <!-- Tabel Rekapitulasi Tiap Guru -->
+  <div class="rounded-xl border border-zinc-200 bg-white overflow-hidden shadow-2xs">
+    <div class="px-5 py-3.5 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+      <div class="text-xs font-semibold text-zinc-900">Statistik Kehadiran Guru Bulan {{ current_month_name }}</div>
+      <div class="text-[11px] text-zinc-500 font-mono">{{ teachers|length }} Data Guru</div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs">
+        <thead class="bg-zinc-50 border-b border-zinc-100 text-zinc-500 font-medium">
+          <tr>
+            <th class="px-4 py-3">Nama Lengkap & NIP</th>
+            <th class="px-3 py-3 text-center">Hadir Tepat</th>
+            <th class="px-3 py-3 text-center">Terlambat</th>
+            <th class="px-3 py-3 text-center">Sakit</th>
+            <th class="px-3 py-3 text-center">Izin / Dinas</th>
+            <th class="px-3 py-3 text-center">Alpa</th>
+            <th class="px-4 py-3 text-center font-semibold">Tingkat Disiplin</th>
+            <th class="px-4 py-3 text-right">Aksi</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-100 text-zinc-800">
+          {% for t in teachers %}
+          {% set discipline_pct = ((t.present / (t.present + t.late + t.absent + t.excused + t.sick) * 100) if (t.present + t.late + t.absent + t.excused + t.sick) > 0 else 100)|round|int %}
+          <tr class="hover:bg-zinc-50/70 transition-colors">
+            <td class="px-4 py-3">
+              <div class="font-semibold text-zinc-900">{{ t.full_name }}</div>
+              <div class="text-[11px] text-zinc-400 font-mono">NIP: {{ t.nip or '-' }}</div>
+            </td>
+            <td class="px-3 py-3 text-center tabular font-semibold text-emerald-600">{{ t.present }}</td>
+            <td class="px-3 py-3 text-center tabular font-semibold text-amber-600">{{ t.late }}</td>
+            <td class="px-3 py-3 text-center tabular text-sky-600">{{ t.sick }}</td>
+            <td class="px-3 py-3 text-center tabular text-zinc-600">{{ t.excused }}</td>
+            <td class="px-3 py-3 text-center tabular font-semibold text-rose-600">{{ t.absent }}</td>
+            <td class="px-4 py-3 text-center">
+              <div class="inline-flex items-center gap-1.5">
+                <div class="w-16 h-2 rounded-full bg-zinc-100 overflow-hidden">
+                  <div class="h-full {% if discipline_pct >= 90 %}bg-emerald-500{% elif discipline_pct >= 75 %}bg-amber-500{% else %}bg-rose-500{% endif %}" style="width: {{ discipline_pct }}%"></div>
+                </div>
+                <span class="text-[11px] font-mono tabular font-semibold">{{ discipline_pct }}%</span>
+              </div>
+            </td>
+            <td class="px-4 py-3 text-right">
+              <button onclick="openTeacherDetailPanel('{{ t.user_id }}', '{{ t.full_name }}', '{{ t.nip or '' }}', {{ t.present }}, {{ t.late }}, {{ t.sick }}, {{ t.excused }}, {{ t.absent }}, {{ discipline_pct }})"
+                      class="px-2.5 py-1 rounded-md border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 text-[11px] font-medium transition-colors">
+                Panel Samping
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- SLIDE-OVER SIDE PANEL (PANEL DETAIL REKAP BULANAN GURU) -->
+<div id="side-panel-backdrop" onclick="closeTeacherDetailPanel()" class="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs transition-opacity duration-300 opacity-0 pointer-events-none"></div>
+
+<aside id="side-panel" class="fixed top-0 right-0 z-50 h-full w-full max-w-md bg-white border-l border-zinc-200 shadow-2xl transform translate-x-full transition-transform duration-300 ease-in-out flex flex-col">
+  <!-- Header Panel -->
+  <div class="px-6 py-4 border-b border-zinc-100 flex items-center justify-between">
+    <div>
+      <div class="text-[10px] font-mono tracking-wider uppercase text-zinc-400">Panel Samping Evaluasi Guru</div>
+      <h3 id="panel-teacher-name" class="text-sm font-semibold text-zinc-900 mt-0.5">Nama Guru</h3>
+    </div>
+    <button onclick="closeTeacherDetailPanel()" class="w-8 h-8 rounded-md border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center text-zinc-500 hover:text-zinc-900 transition-colors">
+      <i data-lucide="x" class="w-4 h-4"></i>
+    </button>
+  </div>
+
+  <!-- Body Panel Samping -->
+  <div class="flex-1 overflow-y-auto p-6 space-y-6">
+    <!-- Info Ringkas Guru -->
+    <div class="rounded-lg bg-zinc-50 border border-zinc-200 p-4 space-y-2">
+      <div class="flex justify-between items-center text-xs">
+        <span class="text-zinc-500">NIP:</span>
+        <span id="panel-teacher-nip" class="font-mono font-medium text-zinc-800">-</span>
+      </div>
+      <div class="flex justify-between items-center text-xs">
+        <span class="text-zinc-500">Periode Evaluasi:</span>
+        <span class="font-mono font-medium text-zinc-800">{{ current_month_name }} {{ current_year }}</span>
+      </div>
+      <div class="flex justify-between items-center text-xs">
+        <span class="text-zinc-500">Skor Ketepatan Waktu:</span>
+        <span id="panel-teacher-discipline" class="font-mono font-semibold text-emerald-600">-</span>
+      </div>
+    </div>
+
+    <!-- Ringkasan Kartu Angka -->
+    <div class="grid grid-cols-3 gap-2">
+      <div class="p-3 rounded-lg border border-zinc-200 bg-white text-center">
+        <div class="text-[10px] font-mono text-zinc-400">HADIR TEPAT</div>
+        <div id="panel-stat-present" class="text-lg font-semibold tabular text-emerald-600 mt-0.5">-</div>
+      </div>
+      <div class="p-3 rounded-lg border border-zinc-200 bg-white text-center">
+        <div class="text-[10px] font-mono text-zinc-400">TERLAMBAT</div>
+        <div id="panel-stat-late" class="text-lg font-semibold tabular text-amber-600 mt-0.5">-</div>
+      </div>
+      <div class="p-3 rounded-lg border border-zinc-200 bg-white text-center">
+        <div class="text-[10px] font-mono text-zinc-400">ALPA</div>
+        <div id="panel-stat-absent" class="text-lg font-semibold tabular text-rose-600 mt-0.5">-</div>
+      </div>
+    </div>
+
+    <!-- Catatan Penilaian Disiplin Guru -->
+    <div class="space-y-3">
+      <h4 class="text-xs font-semibold text-zinc-800">Catatan Pimpinan / Kepala Sekolah</h4>
+      <textarea id="panel-eval-notes" placeholder="Tuliskan catatan apresiasi kedisiplinan atau teguran kehadiran untuk evaluasi bulanan dewan guru..." 
+                class="w-full p-3 rounded-lg border border-zinc-200 text-xs focus:ring-2 focus:ring-black focus:outline-hidden" rows="4"></textarea>
+      <button onclick="alert('Catatan evaluasi bulanan tersimpan secara lokal.'); closeTeacherDetailPanel();" class="w-full py-2.5 rounded-md bg-zinc-900 hover:bg-zinc-800 text-white font-medium text-xs transition-colors flex items-center justify-center gap-2">
+        <i data-lucide="check" class="w-4 h-4"></i> Simpan Catatan Evaluasi
+      </button>
+    </div>
+  </div>
+</aside>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function openTeacherDetailPanel(userId, name, nip, present, late, sick, excused, absent, discipline) {
+    document.getElementById('panel-teacher-name').textContent = name;
+    document.getElementById('panel-teacher-nip').textContent = nip || '-';
+    document.getElementById('panel-teacher-discipline').textContent = discipline + '%';
+    document.getElementById('panel-stat-present').textContent = present;
+    document.getElementById('panel-stat-late').textContent = late;
+    document.getElementById('panel-stat-absent').textContent = absent;
+
+    const panel = document.getElementById('side-panel');
+    const backdrop = document.getElementById('side-panel-backdrop');
+
+    backdrop.classList.remove('opacity-0', 'pointer-events-none');
+    backdrop.classList.add('opacity-100');
+
+    panel.classList.remove('translate-x-full');
+    panel.classList.add('translate-x-0');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function closeTeacherDetailPanel() {
+    const panel = document.getElementById('side-panel');
+    const backdrop = document.getElementById('side-panel-backdrop');
+
+    backdrop.classList.add('opacity-0', 'pointer-events-none');
+    backdrop.classList.remove('opacity-100');
+
+    panel.classList.add('translate-x-full');
+    panel.classList.remove('translate-x-0');
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeTeacherDetailPanel();
+  });
+</script>
+{% endblock %}

@@ -47,6 +47,9 @@ def init_db():
             latitude REAL DEFAULT -7.9666,
             longitude REAL DEFAULT 112.6326,
             radius_meters INTEGER DEFAULT 50,
+            work_start_time TEXT DEFAULT '07:15', -- Batas jam masuk tepat waktu (HH:MM)
+            late_cutoff_time TEXT DEFAULT '07:30', -- Lewat jam ini dihitung Terlambat (HH:MM)
+            work_end_time TEXT DEFAULT '15:00', -- Jam kepulangan (HH:MM)
             qr_daily_token TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );

@@ -344,6 +344,177 @@ async def admin_regenerate_qr(request: Request):
     conn.close()
     return RedirectResponse(url="/admin/qr", status_code=303)
 
+# ADMIN: SETTINGS JAM & GPS SEKOLAH
+@app.get("/admin/settings", response_class=HTMLResponse)
+async def admin_settings_page(request: Request, success: Optional[int] = 0):
+    user = get_current_user(request)
+    if not user or user["role"] != "ADMIN":
+        return RedirectResponse(url="/login")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM institutions WHERE id = ?", (user["institution_id"],))
+    inst = dict(cur.fetchone())
+    conn.close()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin_settings.html",
+        context={
+            "user": user,
+            "active_menu": "settings",
+            "inst": inst,
+            "success": bool(success)
+        }
+    )
+
+@app.post("/admin/settings")
+async def admin_save_settings(
+    request: Request,
+    work_start_time: str = Form(...),
+    late_cutoff_time: str = Form(...),
+    work_end_time: str = Form(...),
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    radius_meters: int = Form(...)
+):
+    user = get_current_user(request)
+    if not user or user["role"] != "ADMIN":
+        return RedirectResponse(url="/login")
+
+    conn = get_db()
+    conn.execute("""
+        UPDATE institutions
+        SET work_start_time = ?, late_cutoff_time = ?, work_end_time = ?,
+            latitude = ?, longitude = ?, radius_meters = ?
+        WHERE id = ?
+    """, (work_start_time, late_cutoff_time, work_end_time, latitude, longitude, radius_meters, user["institution_id"]))
+    conn.commit()
+    conn.close()
+
+    return RedirectResponse(url="/admin/settings?success=1", status_code=303)
+
+# ADMIN: REKAP BULANAN
+@app.get("/admin/monthly", response_class=HTMLResponse)
+async def admin_monthly_page(request: Request, month: Optional[str] = None):
+    user = get_current_user(request)
+    if not user or user["role"] != "ADMIN":
+        return RedirectResponse(url="/login")
+
+    # Format month: YYYY-MM
+    selected_month = month or datetime.now().strftime("%Y-%m")
+    year_str, month_str = selected_month.split("-")
+    
+    month_names = {
+        "01": "Januari", "02": "Februari", "03": "Maret", "04": "April",
+        "05": "Mei", "06": "Juni", "07": "Juli", "08": "Agustus",
+        "09": "September", "10": "Oktober", "11": "November", "12": "Desember"
+    }
+    month_name = month_names.get(month_str, "Bulan Ini")
+
+    conn = get_db()
+    cur = conn.cursor()
+    # Ambil seluruh guru dan agregasi status per bulan
+    cur.execute("""
+        SELECT u.id as user_id, u.full_name, u.nip,
+               COUNT(CASE WHEN a.status = 'PRESENT' THEN 1 END) as present,
+               COUNT(CASE WHEN a.status = 'LATE' THEN 1 END) as late,
+               COUNT(CASE WHEN a.status = 'SICK' THEN 1 END) as sick,
+               COUNT(CASE WHEN a.status = 'EXCUSED' THEN 1 END) as excused,
+               COUNT(CASE WHEN a.status = 'ABSENT' THEN 1 END) as absent
+        FROM users u
+        LEFT JOIN teacher_attendance a ON u.id = a.user_id AND strftime('%Y-%m', a.date) = ?
+        WHERE u.institution_id = ? AND u.role IN ('TEACHER', 'STAFF') AND u.is_active = 1
+        GROUP BY u.id
+        ORDER BY u.full_name ASC
+    """, (selected_month, user["institution_id"]))
+    
+    teachers = [dict(r) for r in cur.fetchall()]
+    conn.close()
+
+    total_present = sum(t["present"] for t in teachers)
+    total_late = sum(t["late"] for t in teachers)
+    total_sick = sum(t["sick"] for t in teachers)
+    total_excused = sum(t["excused"] for t in teachers)
+    total_absent = sum(t["absent"] for t in teachers)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin_monthly.html",
+        context={
+            "user": user,
+            "active_menu": "monthly",
+            "selected_month": selected_month,
+            "current_month_name": month_name,
+            "current_year": year_str,
+            "teachers": teachers,
+            "stats": {
+                "total_teachers": len(teachers),
+                "total_present": total_present,
+                "total_late": total_late,
+                "total_sick": total_sick,
+                "total_excused": total_excused,
+                "total_absent": total_absent
+            }
+        }
+    )
+
+# ADMIN: EKSPOR REKAP BULANAN KE CSV
+@app.get("/admin/monthly/export")
+async def admin_export_monthly_csv(request: Request, month: Optional[str] = None):
+    import csv
+    import io
+
+    user = get_current_user(request)
+    if not user or user["role"] != "ADMIN":
+        return RedirectResponse(url="/login")
+
+    selected_month = month or datetime.now().strftime("%Y-%m")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT u.full_name, u.nip,
+               COUNT(CASE WHEN a.status = 'PRESENT' THEN 1 END) as present,
+               COUNT(CASE WHEN a.status = 'LATE' THEN 1 END) as late,
+               COUNT(CASE WHEN a.status = 'SICK' THEN 1 END) as sick,
+               COUNT(CASE WHEN a.status = 'EXCUSED' THEN 1 END) as excused,
+               COUNT(CASE WHEN a.status = 'ABSENT' THEN 1 END) as absent
+        FROM users u
+        LEFT JOIN teacher_attendance a ON u.id = a.user_id AND strftime('%Y-%m', a.date) = ?
+        WHERE u.institution_id = ? AND u.role IN ('TEACHER', 'STAFF') AND u.is_active = 1
+        GROUP BY u.id
+        ORDER BY u.full_name ASC
+    """, (selected_month, user["institution_id"]))
+    rows = cur.fetchall()
+    conn.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Nama Guru / Staf", "NIP", "Hadir Tepat", "Terlambat", "Sakit", "Izin/Dinas", "Alpa", "Total Kehadiran", "Tingkat Disiplin (%)"])
+
+    for r in rows:
+        total_days = r["present"] + r["late"] + r["sick"] + r["excused"] + r["absent"]
+        discipline = round((r["present"] / total_days * 100)) if total_days > 0 else 100
+        writer.writerow([
+            r["full_name"],
+            r["nip"] or "-",
+            r["present"],
+            r["late"],
+            r["sick"],
+            r["excused"],
+            r["absent"],
+            total_days,
+            f"{discipline}%"
+        ])
+
+    csv_data = output.getvalue()
+    filename = f"rekap_presensi_guru_{selected_month}.csv"
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
 # ADMIN: MANUAL ATTENDANCE OVERRIDE
 @app.post("/api/admin/manual-attendance")
 async def admin_manual_attendance(

@@ -87,15 +87,19 @@
       {% if user.role == 'ADMIN' %}
       <a href="/admin/recap" class="flex items-center gap-2.5 px-3 py-2 text-xs rounded-md transition-colors {% if active_menu == 'recap' %}bg-zinc-200/80 text-black font-semibold shadow-2xs{% else %}text-zinc-600 hover:text-black hover:bg-zinc-100{% endif %}">
         <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
-        <span>Monitor Presensi Guru</span>
+        <span>Monitor Harian</span>
+      </a>
+      <a href="/admin/monthly" class="flex items-center gap-2.5 px-3 py-2 text-xs rounded-md transition-colors {% if active_menu == 'monthly' %}bg-zinc-200/80 text-black font-semibold shadow-2xs{% else %}text-zinc-600 hover:text-black hover:bg-zinc-100{% endif %}">
+        <i data-lucide="calendar" class="w-4 h-4"></i>
+        <span>Rekap Bulanan</span>
       </a>
       <a href="/admin/qr" class="flex items-center gap-2.5 px-3 py-2 text-xs rounded-md transition-colors {% if active_menu == 'qr' %}bg-zinc-200/80 text-black font-semibold shadow-2xs{% else %}text-zinc-600 hover:text-black hover:bg-zinc-100{% endif %}">
         <i data-lucide="qr-code" class="w-4 h-4"></i>
         <span>QR Code Harian</span>
       </a>
-      <a href="/admin/teachers" class="flex items-center gap-2.5 px-3 py-2 text-xs rounded-md transition-colors {% if active_menu == 'teachers' %}bg-zinc-200/80 text-black font-semibold shadow-2xs{% else %}text-zinc-600 hover:text-black hover:bg-zinc-100{% endif %}">
-        <i data-lucide="users" class="w-4 h-4"></i>
-        <span>Daftar Guru & Staf</span>
+      <a href="/admin/settings" class="flex items-center gap-2.5 px-3 py-2 text-xs rounded-md transition-colors {% if active_menu == 'settings' %}bg-zinc-200/80 text-black font-semibold shadow-2xs{% else %}text-zinc-600 hover:text-black hover:bg-zinc-100{% endif %}">
+        <i data-lucide="settings" class="w-4 h-4"></i>
+        <span>Pengaturan Jam & GPS</span>
       </a>
       {% endif %}
     </nav>
