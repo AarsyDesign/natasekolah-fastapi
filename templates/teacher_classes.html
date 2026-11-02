@@ -30,11 +30,16 @@
         </div>
       </div>
 
-      <div class="mt-5 pt-4 border-t border-zinc-100">
+      <div class="mt-5 pt-4 border-t border-zinc-100 flex items-center gap-2">
+        <a href="/teacher/grades?assignment_id={{ c.assignment_id }}"
+           class="flex-1 h-9 rounded-md border border-zinc-200 hover:bg-zinc-50 text-zinc-800 text-xs font-medium transition-colors flex items-center justify-center gap-1.5 shadow-2xs">
+          <i data-lucide="award" class="w-3.5 h-3.5"></i>
+          <span>Nilai Rapor</span>
+        </a>
         <a href="/teacher/attendance/{{ c.assignment_id }}"
-           class="w-full h-9 rounded-md bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium transition-colors flex items-center justify-center gap-2 shadow-2xs">
-          <i data-lucide="clipboard-check" class="w-4 h-4"></i>
-          <span>Buka Presensi Santri</span>
+           class="flex-1 h-9 rounded-md bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium transition-colors flex items-center justify-center gap-1.5 shadow-2xs">
+          <i data-lucide="clipboard-check" class="w-3.5 h-3.5"></i>
+          <span>Presensi</span>
         </a>
       </div>
     </div>

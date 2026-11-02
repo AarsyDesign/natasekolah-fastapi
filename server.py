@@ -2,6 +2,8 @@ import os
 import uuid
 import secrets
 import hashlib
+import io
+import csv
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 
@@ -1046,6 +1048,369 @@ async def admin_import_students_csv(request: Request, file: UploadFile = File(..
 
     msg = urllib.parse.quote(f"Berhasil mengimpor {imported_count} santri dari berkas CSV.")
     return RedirectResponse(url=f"/admin/master?message={msg}", status_code=303)
+
+# FASE 4: MODUL NILAI SISWA & RAPOR CETAK MANDIRI
+
+@app.get("/teacher/grades", response_class=HTMLResponse)
+async def teacher_grades_page(
+    request: Request,
+    assignment_id: Optional[str] = None,
+    semester: str = "Ganjil",
+    academic_year: str = "2026/2027",
+    message: Optional[str] = None,
+    user: Dict = Depends(get_current_user)
+):
+    if user["role"] not in ["TEACHER", "ADMIN"]:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    
+    conn = get_db()
+    # Jika assignment_id tidak diberikan, ambil penugasan pertama guru
+    if not assignment_id:
+        if user["role"] == "TEACHER":
+            first_asg = conn.execute("SELECT id FROM teacher_assignments WHERE teacher_id = ? LIMIT 1", (user["id"],)).fetchone()
+        else:
+            first_asg = conn.execute("SELECT id FROM teacher_assignments LIMIT 1").fetchone()
+        if first_asg:
+            assignment_id = first_asg["id"]
+        else:
+            return RedirectResponse(url="/teacher/classes", status_code=status.HTTP_303_SEE_OTHER)
+
+    # Ambil detail assignment
+    asg = conn.execute("""
+        SELECT ta.id, ta.classroom_id, ta.subject_id,
+               c.name as classroom_name, c.level, c.academic_year,
+               s.name as subject_name, s.code as subject_code
+        FROM teacher_assignments ta
+        JOIN classrooms c ON ta.classroom_id = c.id
+        JOIN subjects s ON ta.subject_id = s.id
+        WHERE ta.id = ?
+    """, (assignment_id,)).fetchone()
+
+    if not asg:
+        raise HTTPException(status_code=404, detail="Jadwal penugasan tidak ditemukan")
+
+    # Ambil daftar santri di kelas ini dan nilai mereka jika ada
+    students_rows = conn.execute("""
+        SELECT st.id, st.full_name, st.nisn, st.gender,
+               COALESCE(sg.score_formative, 0) as score_formative,
+               COALESCE(sg.score_midterm, 0) as score_midterm,
+               COALESCE(sg.score_final, 0) as score_final,
+               COALESCE(sg.final_grade, 0) as final_grade,
+               COALESCE(sg.predicate, 'B') as predicate,
+               COALESCE(sg.teacher_notes, '') as teacher_notes
+        FROM students st
+        LEFT JOIN student_grades sg ON st.id = sg.student_id 
+             AND sg.subject_id = ? AND sg.semester = ? AND sg.academic_year = ?
+        WHERE st.classroom_id = ? AND st.is_active = 1
+        ORDER BY st.full_name ASC
+    """, (asg["subject_id"], semester, academic_year, asg["classroom_id"])).fetchall()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="teacher_grades.html",
+        context={
+            "user": user,
+            "active_menu": "grades",
+            "assignment": asg,
+            "students": students_rows,
+            "semester": semester,
+            "academic_year": academic_year,
+            "message": message
+        }
+    )
+
+@app.post("/teacher/grades/save-batch")
+async def teacher_save_grades_batch(
+    request: Request,
+    assignment_id: str = Form(...),
+    semester: str = Form("Ganjil"),
+    academic_year: str = Form("2026/2027"),
+    user: Dict = Depends(get_current_user)
+):
+    if user["role"] not in ["TEACHER", "ADMIN"]:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    form_data = await request.form()
+    student_ids = form_data.getlist("student_id")
+
+    conn = get_db()
+    asg = conn.execute("SELECT classroom_id, subject_id, institution_id FROM teacher_assignments WHERE id = ?", (assignment_id,)).fetchone()
+    if not asg:
+        raise HTTPException(status_code=404, detail="Jadwal kelas tidak ditemukan")
+
+    for sid in student_ids:
+        try:
+            f_score = float(form_data.get(f"score_formative_{sid}", 0))
+            m_score = float(form_data.get(f"score_midterm_{sid}", 0))
+            e_score = float(form_data.get(f"score_final_{sid}", 0))
+        except ValueError:
+            f_score, m_score, e_score = 0.0, 0.0, 0.0
+
+        notes = str(form_data.get(f"notes_{sid}", "")).strip()
+
+        # Rumus bobot nilai akhir: 40% Formatif + 30% PTS + 30% PAS
+        final_grade = round((f_score * 0.40) + (m_score * 0.30) + (e_score * 0.30), 1)
+
+        # Hitung predikat nilai
+        if final_grade >= 88:
+            predicate = "A"
+        elif final_grade >= 75:
+            predicate = "B"
+        elif final_grade >= 60:
+            predicate = "C"
+        else:
+            predicate = "D"
+
+        # Simpan atau update ke database (UPSERT)
+        conn.execute("""
+            INSERT INTO student_grades (
+                id, institution_id, student_id, subject_id, semester, academic_year,
+                score_formative, score_midterm, score_final, final_grade, predicate, teacher_notes, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(student_id, subject_id, semester, academic_year) DO UPDATE SET
+                score_formative = excluded.score_formative,
+                score_midterm = excluded.score_midterm,
+                score_final = excluded.score_final,
+                final_grade = excluded.final_grade,
+                predicate = excluded.predicate,
+                teacher_notes = excluded.teacher_notes,
+                updated_at = CURRENT_TIMESTAMP
+        """, (
+            str(uuid.uuid4()), asg["institution_id"], sid, asg["subject_id"], semester, academic_year,
+            f_score, m_score, e_score, final_grade, predicate, notes
+        ))
+
+    conn.commit()
+    return RedirectResponse(
+        url=f"/teacher/grades?assignment_id={assignment_id}&semester={semester}&academic_year={academic_year}&message=Nilai+seluruh+siswa+berhasil+disimpan",
+        status_code=status.HTTP_303_SEE_OTHER
+    )
+
+@app.get("/teacher/grades/export-csv")
+async def teacher_export_grades_csv(
+    assignment_id: str,
+    semester: str = "Ganjil",
+    academic_year: str = "2026/2027",
+    user: Dict = Depends(get_current_user)
+):
+    conn = get_db()
+    asg = conn.execute("""
+        SELECT c.name as classroom_name, s.name as subject_name
+        FROM teacher_assignments ta
+        JOIN classrooms c ON ta.classroom_id = c.id
+        JOIN subjects s ON ta.subject_id = s.id
+        WHERE ta.id = ?
+    """, (assignment_id,)).fetchone()
+
+    rows = conn.execute("""
+        SELECT st.nisn, st.full_name, st.gender,
+               COALESCE(sg.score_formative, 0) as formative,
+               COALESCE(sg.score_midterm, 0) as midterm,
+               COALESCE(sg.score_final, 0) as final_exam,
+               COALESCE(sg.final_grade, 0) as final_grade,
+               COALESCE(sg.predicate, '-') as predicate,
+               COALESCE(sg.teacher_notes, '') as notes
+        FROM students st
+        JOIN teacher_assignments ta ON st.classroom_id = ta.classroom_id
+        LEFT JOIN student_grades sg ON st.id = sg.student_id 
+             AND sg.subject_id = ta.subject_id AND sg.semester = ? AND sg.academic_year = ?
+        WHERE ta.id = ? AND st.is_active = 1
+        ORDER BY st.full_name ASC
+    """, (semester, academic_year, assignment_id)).fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["NO", "NISN", "NAMA SISWA", "GENDER", "FORMATIF (40%)", "PTS (30%)", "PAS (30%)", "NILAI AKHIR", "PREDIKAT", "CATATAN"])
+    for idx, r in enumerate(rows, start=1):
+        writer.writerow([idx, r["nisn"] or "", r["full_name"], r["gender"] or "", r["formative"], r["midterm"], r["final_exam"], r["final_grade"], r["predicate"], r["notes"]])
+
+    filename = f"Leger_Nilai_{asg['classroom_name']}_{asg['subject_name']}_{semester}.csv".replace(" ", "_")
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+@app.get("/admin/grades", response_class=HTMLResponse)
+async def admin_grades_page(
+    request: Request,
+    classroom_id: Optional[str] = None,
+    user: Dict = Depends(get_current_user)
+):
+    if user["role"] != "ADMIN":
+        raise HTTPException(status_code=403, detail="Akses khusus Administrator")
+
+    conn = get_db()
+    classrooms = conn.execute("SELECT id, name, level, academic_year FROM classrooms ORDER BY level, name").fetchall()
+    
+    if not classroom_id and classrooms:
+        classroom_id = classrooms[0]["id"]
+
+    # Ambil daftar santri & rata-rata nilai rapor mereka
+    students = []
+    if classroom_id:
+        students = conn.execute("""
+            SELECT st.id, st.full_name, st.nisn, st.gender, c.name as classroom_name,
+                   ROUND(AVG(sg.final_grade), 1) as avg_grade,
+                   CASE 
+                     WHEN AVG(sg.final_grade) >= 88 THEN 'A'
+                     WHEN AVG(sg.final_grade) >= 75 THEN 'B'
+                     WHEN AVG(sg.final_grade) >= 60 THEN 'C'
+                     WHEN AVG(sg.final_grade) > 0 THEN 'D'
+                     ELSE '-'
+                   END as overall_predicate
+            FROM students st
+            JOIN classrooms c ON st.classroom_id = c.id
+            LEFT JOIN student_grades sg ON st.id = sg.student_id
+            WHERE st.classroom_id = ? AND st.is_active = 1
+            GROUP BY st.id
+            ORDER BY st.full_name ASC
+        """, (classroom_id,)).fetchall()
+
+    # Statistik global
+    stat_graded = conn.execute("SELECT COUNT(DISTINCT student_id) FROM student_grades").fetchone()[0]
+    avg_score = conn.execute("SELECT ROUND(AVG(final_grade), 1) FROM student_grades").fetchone()[0] or 0.0
+    passed_count = conn.execute("SELECT COUNT(*) FROM student_grades WHERE final_grade >= 75").fetchone()[0]
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin_grades.html",
+        context={
+            "user": user,
+            "active_menu": "grades",
+            "classrooms": classrooms,
+            "selected_classroom_id": classroom_id,
+            "students": students,
+            "stats": {
+                "graded_students": stat_graded,
+                "avg_school_score": avg_score,
+                "total_passed": passed_count
+            }
+        }
+    )
+
+@app.get("/admin/grades/export-classroom-csv")
+async def admin_export_classroom_grades_csv(
+    classroom_id: str,
+    user: Dict = Depends(get_current_user)
+):
+    if user["role"] != "ADMIN":
+        raise HTTPException(status_code=403, detail="Akses khusus Administrator")
+
+    conn = get_db()
+    c = conn.execute("SELECT name FROM classrooms WHERE id = ?", (classroom_id,)).fetchone()
+    c_name = c["name"] if c else "Kelas"
+
+    students = conn.execute("""
+        SELECT st.nisn, st.full_name, st.gender,
+               ROUND(AVG(sg.final_grade), 1) as avg_score,
+               CASE 
+                 WHEN AVG(sg.final_grade) >= 88 THEN 'A'
+                 WHEN AVG(sg.final_grade) >= 75 THEN 'B'
+                 WHEN AVG(sg.final_grade) >= 60 THEN 'C'
+                 ELSE 'D'
+               END as predicate
+        FROM students st
+        LEFT JOIN student_grades sg ON st.id = sg.student_id
+        WHERE st.classroom_id = ? AND st.is_active = 1
+        GROUP BY st.id
+        ORDER BY st.full_name ASC
+    """, (classroom_id,)).fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["NO", "NISN", "NAMA LENGKAP SISWA", "GENDER", "RATA-RATA NILAI", "PREDIKAT AKHIR"])
+    for idx, s in enumerate(students, start=1):
+        writer.writerow([idx, s["nisn"] or "", s["full_name"], s["gender"] or "", s["avg_score"] or 0, s["predicate"]])
+
+    filename = f"Leger_Nilai_Rombel_{c_name}.csv".replace(" ", "_")
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+@app.get("/report-card/{student_id}", response_class=HTMLResponse)
+async def student_report_card_page(
+    request: Request,
+    student_id: str,
+    semester: str = "Ganjil",
+    academic_year: str = "2026/2027",
+    user: Dict = Depends(get_current_user)
+):
+    conn = get_db()
+    student = conn.execute("""
+        SELECT st.id, st.full_name, st.nisn, st.gender, c.name as classroom_name, st.institution_id
+        FROM students st
+        JOIN classrooms c ON st.classroom_id = c.id
+        WHERE st.id = ?
+    """, (student_id,)).fetchone()
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
+
+    inst = conn.execute("SELECT id, name, code FROM institutions WHERE id = ?", (student["institution_id"],)).fetchone()
+
+    # Ambil nilai per mata pelajaran
+    grades = conn.execute("""
+        SELECT s.name as subject_name,
+               sg.score_formative, sg.score_midterm, sg.score_final,
+               sg.final_grade, sg.predicate, sg.teacher_notes
+        FROM student_grades sg
+        JOIN subjects s ON sg.subject_id = s.id
+        WHERE sg.student_id = ? AND sg.semester = ? AND sg.academic_year = ?
+        ORDER BY s.name ASC
+    """, (student_id, semester, academic_year)).fetchall()
+
+    avg_score = 0.0
+    overall_predicate = "-"
+    if grades:
+        avg_score = round(sum(g["final_grade"] for g in grades) / len(grades), 1)
+        if avg_score >= 88:
+            overall_predicate = "A"
+        elif avg_score >= 75:
+            overall_predicate = "B"
+        elif avg_score >= 60:
+            overall_predicate = "C"
+        else:
+            overall_predicate = "D"
+
+    # Rekap absensi santri di kelas
+    att_present = conn.execute("""
+        SELECT COUNT(*) FROM student_attendance_records WHERE student_id = ? AND status = 'PRESENT'
+    """, (student_id,)).fetchone()[0]
+    att_sick = conn.execute("""
+        SELECT COUNT(*) FROM student_attendance_records WHERE student_id = ? AND status = 'SICK'
+    """, (student_id,)).fetchone()[0]
+    att_excused = conn.execute("""
+        SELECT COUNT(*) FROM student_attendance_records WHERE student_id = ? AND status = 'EXCUSED'
+    """, (student_id,)).fetchone()[0]
+    att_absent = conn.execute("""
+        SELECT COUNT(*) FROM student_attendance_records WHERE student_id = ? AND status = 'ABSENT'
+    """, (student_id,)).fetchone()[0]
+
+    today_str = datetime.now().strftime("%d %B %Y")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="student_report_card.html",
+        context={
+            "student": student,
+            "institution": inst,
+            "grades": grades,
+            "semester": semester,
+            "academic_year": academic_year,
+            "avg_score": avg_score,
+            "overall_predicate": overall_predicate,
+            "attendance": {
+                "present": att_present,
+                "sick": att_sick,
+                "excused": att_excused,
+                "absent": att_absent
+            },
+            "today_date": today_str
+        }
+    )
 
 if __name__ == "__main__":
     import uvicorn

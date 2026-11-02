@@ -182,6 +182,32 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_student_att_session ON student_attendance_records(session_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_student_att_student ON student_attendance_records(student_id);")
 
+        # FASE 4: MODUL PENILAIAN SISWA / SANTRI (FORMATIF, SUMATIF & CATATAN RAPOR)
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS student_grades (
+            id TEXT PRIMARY KEY,
+            institution_id TEXT NOT NULL,
+            student_id TEXT NOT NULL,
+            subject_id TEXT NOT NULL,
+            semester TEXT NOT NULL DEFAULT 'Ganjil', -- Ganjil / Genap
+            academic_year TEXT NOT NULL DEFAULT '2026/2027',
+            score_formative REAL DEFAULT 0, -- Tugas / Harian / Formatif
+            score_midterm REAL DEFAULT 0,   -- Penilaian Tengah Semester (PTS/STS)
+            score_final REAL DEFAULT 0,     -- Penilaian Akhir Semester (PAS/SAS)
+            final_grade REAL DEFAULT 0,     -- Nilai Rapor Akhir (Kalkulasi Berbobot)
+            predicate TEXT DEFAULT 'B',     -- Predikat Huruf (A, B, C, D)
+            teacher_notes TEXT,             -- Deskripsi Capaian / Catatan Guru
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(student_id, subject_id, semester, academic_year),
+            FOREIGN KEY (institution_id) REFERENCES institutions(id) ON DELETE CASCADE,
+            FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+            FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
+        );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_grades_student ON student_grades(student_id, semester, academic_year);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_grades_subject ON student_grades(subject_id);")
+
     # Seed data awal jika kosong
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) FROM institutions")

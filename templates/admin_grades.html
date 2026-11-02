@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Rekap Nilai Siswa & Buku Rapor{% endblock %}
+{% block header_title %}Rekap Nilai Siswa & Manajemen Cetak Rapor{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Ringkasan Statistik Nilai -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="p-4 bg-white border border-zinc-200 rounded-xl shadow-2xs">
+      <div class="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Total Siswa Ternilai</div>
+      <div class="text-2xl font-bold font-mono text-zinc-900 mt-1">{{ stats.graded_students }}</div>
+      <div class="text-[10px] text-zinc-500 mt-1">Siswa telah memiliki nilai rapor</div>
+    </div>
+    <div class="p-4 bg-white border border-zinc-200 rounded-xl shadow-2xs">
+      <div class="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Rata-Rata Nilai Sekolah</div>
+      <div class="text-2xl font-bold font-mono text-zinc-900 mt-1">{{ stats.avg_school_score }}</div>
+      <div class="text-[10px] text-zinc-500 mt-1">Skala 100 poin</div>
+    </div>
+    <div class="p-4 bg-white border border-zinc-200 rounded-xl shadow-2xs">
+      <div class="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Predikat A & B</div>
+      <div class="text-2xl font-bold font-mono text-emerald-600 mt-1">{{ stats.total_passed }}</div>
+      <div class="text-[10px] text-zinc-500 mt-1">Memenuhi ketuntasan belajar</div>
+    </div>
+    <div class="p-4 bg-white border border-zinc-200 rounded-xl shadow-2xs">
+      <div class="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Rombel Aktif</div>
+      <div class="text-2xl font-bold font-mono text-zinc-900 mt-1">{{ classrooms|length }}</div>
+      <div class="text-[10px] text-zinc-500 mt-1">Tahun ajaran 2026/2027</div>
+    </div>
+  </div>
+
+  <!-- Filter Kelas & Rombel -->
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-white border border-zinc-200 rounded-xl shadow-2xs">
+    <div class="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+      <span class="text-xs font-medium text-zinc-500 shrink-0">Pilih Rombel:</span>
+      {% for c in classrooms %}
+      <a href="/admin/grades?classroom_id={{ c.id }}" class="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors {% if selected_classroom_id == c.id %}bg-black text-white shadow-2xs{% else %}border border-zinc-200 text-zinc-600 hover:bg-zinc-50{% endif %}">
+        {{ c.name }}
+      </a>
+      {% endfor %}
+    </div>
+
+    <!-- Tombol Ekspor CSV Leger Kelas -->
+    {% if selected_classroom_id %}
+    <a href="/admin/grades/export-classroom-csv?classroom_id={{ selected_classroom_id }}" class="flex items-center gap-1.5 px-3 py-1.5 border border-zinc-200 rounded-lg text-xs font-medium text-zinc-700 hover:bg-zinc-50 transition-colors shadow-2xs shrink-0">
+      <i data-lucide="download" class="w-3.5 h-3.5"></i>
+      <span>Ekspor Leger Nilai Kelas CSV</span>
+    </a>
+    {% endif %}
+  </div>
+
+  <!-- Tabel Siswa & Cetak Rapor Mandiri -->
+  <div class="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-2xs">
+    <div class="px-5 py-4 border-b border-zinc-200 flex items-center justify-between">
+      <div>
+        <h3 class="text-xs font-semibold text-zinc-900 uppercase tracking-wider">Daftar Siswa & Cetak Rapor Digital</h3>
+        <p class="text-[11px] text-zinc-500 mt-0.5">Klik Cetak Rapor untuk melihat lembar rapor digital lengkap siap cetak PDF / A4.</p>
+      </div>
+      <div class="text-[11px] font-mono text-zinc-500">
+        {{ students|length }} Siswa
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs">
+        <thead>
+          <tr class="border-b border-zinc-200 bg-zinc-50/70 text-zinc-600 font-medium text-[11px]">
+            <th class="py-2.5 px-4 w-10">No</th>
+            <th class="py-2.5 px-4">Nama Lengkap Siswa</th>
+            <th class="py-2.5 px-4 w-32">NISN</th>
+            <th class="py-2.5 px-4 w-36">Kelas / Rombel</th>
+            <th class="py-2.5 px-4 w-28 text-center">Rata-Rata Nilai</th>
+            <th class="py-2.5 px-4 w-24 text-center">Predikat</th>
+            <th class="py-2.5 px-4 text-right w-36">Dokumen Rapor</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-100">
+          {% for s in students %}
+          <tr class="hover:bg-zinc-50/50 transition-colors">
+            <td class="py-3 px-4 font-mono text-zinc-400">{{ loop.index }}</td>
+            <td class="py-3 px-4 font-medium text-zinc-900">
+              {{ s.full_name }}
+              <div class="text-[10px] text-zinc-500 font-normal">Gender: {{ s.gender or '-' }}</div>
+            </td>
+            <td class="py-3 px-4 font-mono text-zinc-600">{{ s.nisn or '-' }}</td>
+            <td class="py-3 px-4">
+              <span class="px-2 py-0.5 text-[10px] font-medium bg-zinc-100 text-zinc-700 border border-zinc-200 rounded-md">
+                {{ s.classroom_name }}
+              </span>
+            </td>
+            <td class="py-3 px-4 font-mono font-semibold text-zinc-900 text-center">
+              {{ s.avg_grade or '0.0' }}
+            </td>
+            <td class="py-3 px-4 text-center">
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded font-mono text-xs font-bold
+                {% if s.overall_predicate == 'A' %}bg-emerald-50 text-emerald-700 border border-emerald-200
+                {% elif s.overall_predicate == 'B' %}bg-blue-50 text-blue-700 border border-blue-200
+                {% elif s.overall_predicate == 'C' %}bg-amber-50 text-amber-700 border border-amber-200
+                {% else %}bg-zinc-100 text-zinc-500 border border-zinc-200{% endif %}">
+                {{ s.overall_predicate or '-' }}
+              </span>
+            </td>
+            <td class="py-3 px-4 text-right">
+              <a href="/report-card/{{ s.id }}?semester=Ganjil&academic_year=2026/2027" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-black hover:bg-zinc-800 text-white rounded-lg text-xs font-medium transition-colors shadow-2xs">
+                <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                <span>Cetak Rapor</span>
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="7" class="py-8 text-center text-zinc-500 text-xs">
+              Belum ada santri terdaftar di rombel kelas ini.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
