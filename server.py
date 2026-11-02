@@ -1,10 +1,11 @@
 import os
 import uuid
 import secrets
+import hashlib
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 
-from fastapi import FastAPI, Request, Response, Form, Depends, HTTPException, status
+from fastapi import FastAPI, Request, Response, Form, HTTPException, Depends, Cookie, UploadFile, File, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -787,6 +788,264 @@ async def api_close_session(
     conn.close()
 
     return RedirectResponse(url=f"/teacher/attendance/{assignment_id}", status_code=303)
+
+# ADMIN: MASTER DATA (SANTRI, KELAS, GURU, IMPORT CSV)
+@app.get("/admin/master", response_class=HTMLResponse)
+async def admin_master_page(request: Request, classroom_id: Optional[str] = None, message: Optional[str] = None):
+    user = get_current_user(request)
+    if not user or user["role"] != "ADMIN":
+        return RedirectResponse(url="/login")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Daftar Kelas
+    cur.execute("SELECT * FROM classrooms WHERE institution_id = ? ORDER BY level ASC, name ASC", (user["institution_id"],))
+    classrooms = cur.fetchall()
+
+    # Query Santri (bisa difilter per kelas)
+    if classroom_id:
+        cur.execute("""
+            SELECT s.*, c.name as classroom_name
+            FROM students s
+            JOIN classrooms c ON s.classroom_id = c.id
+            WHERE s.institution_id = ? AND s.classroom_id = ?
+            ORDER BY s.full_name ASC
+        """, (user["institution_id"], classroom_id))
+    else:
+        cur.execute("""
+            SELECT s.*, c.name as classroom_name
+            FROM students s
+            JOIN classrooms c ON s.classroom_id = c.id
+            WHERE s.institution_id = ?
+            ORDER BY c.level ASC, s.full_name ASC
+        """, (user["institution_id"],))
+    students = cur.fetchall()
+
+    # Statistik master data
+    cur.execute("SELECT COUNT(*) FROM students WHERE institution_id = ? AND is_active = 1", (user["institution_id"],))
+    total_students = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM classrooms WHERE institution_id = ?", (user["institution_id"],))
+    total_classrooms = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM users WHERE institution_id = ? AND role IN ('TEACHER', 'STAFF')", (user["institution_id"],))
+    total_teachers = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM teacher_assignments WHERE institution_id = ?", (user["institution_id"],))
+    total_assignments = cur.fetchone()[0]
+
+    conn.close()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin_master.html",
+        context={
+            "user": user,
+            "active_menu": "master",
+            "classrooms": classrooms,
+            "students": students,
+            "selected_classroom_id": classroom_id,
+            "message": message,
+            "stats": {
+                "total_students": total_students,
+                "total_classrooms": total_classrooms,
+                "total_teachers": total_teachers,
+                "total_assignments": total_assignments
+            }
+        }
+    )
+
+# UNDUH TEMPLATE CSV SANTRI
+@app.get("/admin/master/template-students")
+async def download_student_csv_template():
+    import io, csv
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["nisn", "nama", "kelas", "gender"])
+    writer.writerow(["NIS-2026-001", "Muhammad Farhan", "Kelas 10-A (IPA & Tahfidz)", "L"])
+    writer.writerow(["NIS-2026-002", "Salma Khairunnisa", "Kelas 10-A (IPA & Tahfidz)", "P"])
+    csv_text = output.getvalue()
+    return Response(
+        content=csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="template_import_santri.csv"'}
+    )
+
+# SIMPAN / EDIT SANTRI DARI PANEL SAMPING
+@app.post("/admin/master/save-student")
+async def admin_save_student(
+    request: Request,
+    student_id: Optional[str] = Form(None),
+    full_name: str = Form(...),
+    nisn: Optional[str] = Form(None),
+    classroom_id: str = Form(...),
+    gender: str = Form(...)
+):
+    user = get_current_user(request)
+    if not user or user["role"] != "ADMIN":
+        raise HTTPException(status_code=403, detail="Akses ditolak.")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    if student_id and student_id.strip():
+        # Update
+        cur.execute("""
+            UPDATE students
+            SET full_name = ?, nisn = ?, classroom_id = ?, gender = ?
+            WHERE id = ? AND institution_id = ?
+        """, (full_name.strip(), nisn.strip() if nisn else None, classroom_id, gender, student_id.strip(), user["institution_id"]))
+        msg = f"Data santri {full_name} berhasil diperbarui."
+    else:
+        # Create
+        new_sid = "std_" + secrets.token_hex(6)
+        cur.execute("""
+            INSERT INTO students (id, institution_id, classroom_id, full_name, nisn, gender)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (new_sid, user["institution_id"], classroom_id, full_name.strip(), nisn.strip() if nisn else None, gender))
+        msg = f"Santri {full_name} berhasil ditambahkan ke daftar."
+
+    conn.commit()
+    conn.close()
+
+    import urllib.parse
+    encoded_msg = urllib.parse.quote(msg)
+    return RedirectResponse(url=f"/admin/master?message={encoded_msg}", status_code=303)
+
+# HAPUS SANTRI
+@app.post("/admin/master/delete-student")
+async def admin_delete_student(request: Request, student_id: str = Form(...)):
+    user = get_current_user(request)
+    if not user or user["role"] != "ADMIN":
+        raise HTTPException(status_code=403, detail="Akses ditolak.")
+
+    conn = get_db()
+    conn.execute("DELETE FROM students WHERE id = ? AND institution_id = ?", (student_id, user["institution_id"]))
+    conn.commit()
+    conn.close()
+
+    import urllib.parse
+    msg = urllib.parse.quote("Data santri berhasil dihapus.")
+    return RedirectResponse(url=f"/admin/master?message={msg}", status_code=303)
+
+# TAMBAH ROMBEL KELAS BARU
+@app.post("/admin/master/create-classroom")
+async def admin_create_classroom(
+    request: Request,
+    name: str = Form(...),
+    level: str = Form(...),
+    academic_year: str = Form(...)
+):
+    user = get_current_user(request)
+    if not user or user["role"] != "ADMIN":
+        raise HTTPException(status_code=403, detail="Akses ditolak.")
+
+    conn = get_db()
+    cls_id = "cls_" + secrets.token_hex(5)
+    conn.execute("""
+        INSERT INTO classrooms (id, institution_id, name, level, academic_year)
+        VALUES (?, ?, ?, ?, ?)
+    """, (cls_id, user["institution_id"], name.strip(), level.strip(), academic_year.strip()))
+    conn.commit()
+    conn.close()
+
+    import urllib.parse
+    msg = urllib.parse.quote(f"Kelas baru {name} berhasil dibuat.")
+    return RedirectResponse(url=f"/admin/master?message={msg}", status_code=303)
+
+# TAMBAH GURU BARU CEPAT
+@app.post("/admin/master/create-teacher")
+async def admin_create_teacher(
+    request: Request,
+    full_name: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(...)
+):
+    user = get_current_user(request)
+    if not user or user["role"] != "ADMIN":
+        raise HTTPException(status_code=403, detail="Akses ditolak.")
+
+    conn = get_db()
+    cur = conn.cursor()
+    # Cek username
+    cur.execute("SELECT id FROM users WHERE username = ?", (username.strip(),))
+    if cur.fetchone():
+        conn.close()
+        raise HTTPException(status_code=400, detail="Username sudah dipakai.")
+
+    teacher_id = "usr_" + secrets.token_hex(5)
+    pw_hash = hashlib.sha256(password.strip().encode()).hexdigest()
+    cur.execute("""
+        INSERT INTO users (id, institution_id, username, password_hash, full_name, role)
+        VALUES (?, ?, ?, ?, ?, 'TEACHER')
+    """, (teacher_id, user["institution_id"], username.strip(), pw_hash, full_name.strip()))
+    conn.commit()
+    conn.close()
+
+    import urllib.parse
+    msg = urllib.parse.quote(f"Akun guru {full_name} ({username}) berhasil didaftarkan.")
+    return RedirectResponse(url=f"/admin/master?message={msg}", status_code=303)
+
+# IMPORT MASSAL SANTRI DARI BERKAS CSV
+@app.post("/admin/master/import-students-csv")
+async def admin_import_students_csv(request: Request, file: UploadFile = File(...)):
+    import csv, io, urllib.parse
+
+    user = get_current_user(request)
+    if not user or user["role"] != "ADMIN":
+        raise HTTPException(status_code=403, detail="Akses ditolak.")
+
+    content = await file.read()
+    decoded = content.decode("utf-8-sig", errors="ignore")
+    reader = csv.DictReader(io.StringIO(decoded))
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Cache nama kelas -> ID
+    cur.execute("SELECT id, name FROM classrooms WHERE institution_id = ?", (user["institution_id"],))
+    cls_map = {r["name"].strip().lower(): r["id"] for r in cur.fetchall()}
+
+    # Jika belum ada kelas sama sekali, buat kelas default
+    if not cls_map:
+        default_cls_id = "cls_default"
+        cur.execute("INSERT INTO classrooms (id, institution_id, name, level) VALUES (?, ?, 'Kelas Umum', '10')", (default_cls_id, user["institution_id"]))
+        cls_map["kelas umum"] = default_cls_id
+
+    imported_count = 0
+    for row in reader:
+        # Bersihkan keys dan value (case-insensitive)
+        clean_row = {k.strip().lower(): (v.strip() if v else "") for k, v in row.items() if k}
+        nama = clean_row.get("nama") or clean_row.get("nama lengkap") or clean_row.get("name")
+        if not nama:
+            continue
+
+        nisn = clean_row.get("nisn") or clean_row.get("nis") or None
+        kelas_name = clean_row.get("kelas") or clean_row.get("rombel") or ""
+        gender = (clean_row.get("gender") or clean_row.get("l/p") or "L").upper()
+        if gender not in ["L", "P"]:
+            gender = "L"
+
+        target_cls_id = None
+        if kelas_name and kelas_name.strip().lower() in cls_map:
+            target_cls_id = cls_map[kelas_name.strip().lower()]
+        else:
+            # Ambil kelas pertama yang tersedia
+            target_cls_id = list(cls_map.values())[0]
+
+        student_id = "std_" + secrets.token_hex(6)
+        cur.execute("""
+            INSERT INTO students (id, institution_id, classroom_id, full_name, nisn, gender)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (student_id, user["institution_id"], target_cls_id, nama, nisn, gender))
+        imported_count += 1
+
+    conn.commit()
+    conn.close()
+
+    msg = urllib.parse.quote(f"Berhasil mengimpor {imported_count} santri dari berkas CSV.")
+    return RedirectResponse(url=f"/admin/master?message={msg}", status_code=303)
 
 if __name__ == "__main__":
     import uvicorn

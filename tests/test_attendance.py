@@ -44,6 +44,12 @@ def test_teacher_gps_checkin_flow():
     res_login = client.post("/login", data={"username": "guru1", "password": "guru123"}, follow_redirects=False)
     session_cookie = res_login.cookies["nata_session"]
 
+    # Bersihkan dulu data absensi guru1 hari ini agar fresh
+    conn = get_db()
+    conn.execute("DELETE FROM teacher_attendance WHERE user_id = 'usr_t1' AND date = date('now', 'localtime')")
+    conn.commit()
+    conn.close()
+
     # 1. Coba check-in GPS di luar radius 50m (misal 500m jauhnya)
     res_fail = client.post(
         "/api/attendance/check-in-gps",
