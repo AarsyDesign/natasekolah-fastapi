@@ -94,6 +94,94 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_teacher_att_date ON teacher_attendance(institution_id, date);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_teacher_att_user ON teacher_attendance(user_id, date);")
 
+        # FASE 2: MODEL KELAS, SANTRI, PENUGASAN MENGAJAR & ABSENSI SANTRI
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS classrooms (
+            id TEXT PRIMARY KEY,
+            institution_id TEXT NOT NULL,
+            name TEXT NOT NULL, -- Contoh: "Kelas 10-A IPA", "Kelas 7-B Tahfidz"
+            level TEXT NOT NULL, -- Contoh: "10", "7"
+            academic_year TEXT DEFAULT '2026/2027',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (institution_id) REFERENCES institutions(id) ON DELETE CASCADE
+        );
+        """)
+
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS subjects (
+            id TEXT PRIMARY KEY,
+            institution_id TEXT NOT NULL,
+            name TEXT NOT NULL, -- Contoh: "Matematika", "Bahasa Arab", "Tahfidz"
+            code TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (institution_id) REFERENCES institutions(id) ON DELETE CASCADE
+        );
+        """)
+
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS students (
+            id TEXT PRIMARY KEY,
+            institution_id TEXT NOT NULL,
+            classroom_id TEXT NOT NULL,
+            nisn TEXT UNIQUE,
+            full_name TEXT NOT NULL,
+            gender TEXT CHECK(gender IN ('L', 'P')),
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (institution_id) REFERENCES institutions(id) ON DELETE CASCADE,
+            FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE
+        );
+        """)
+
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS teacher_assignments (
+            id TEXT PRIMARY KEY,
+            institution_id TEXT NOT NULL,
+            teacher_id TEXT NOT NULL,
+            classroom_id TEXT NOT NULL,
+            subject_id TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(teacher_id, classroom_id, subject_id),
+            FOREIGN KEY (institution_id) REFERENCES institutions(id) ON DELETE CASCADE,
+            FOREIGN KEY (teacher_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE,
+            FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
+        );
+        """)
+
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS student_attendance_sessions (
+            id TEXT PRIMARY KEY,
+            institution_id TEXT NOT NULL,
+            assignment_id TEXT NOT NULL,
+            date TEXT NOT NULL, -- YYYY-MM-DD
+            status TEXT DEFAULT 'OPEN' CHECK(status IN ('OPEN', 'CLOSED')),
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(assignment_id, date),
+            FOREIGN KEY (institution_id) REFERENCES institutions(id) ON DELETE CASCADE,
+            FOREIGN KEY (assignment_id) REFERENCES teacher_assignments(id) ON DELETE CASCADE
+        );
+        """)
+
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS student_attendance_records (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            student_id TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('PRESENT', 'SICK', 'EXCUSED', 'ABSENT')),
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(session_id, student_id),
+            FOREIGN KEY (session_id) REFERENCES student_attendance_sessions(id) ON DELETE CASCADE,
+            FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+        );
+        """)
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_student_att_session ON student_attendance_records(session_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_student_att_student ON student_attendance_records(student_id);")
+
     # Seed data awal jika kosong
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) FROM institutions")

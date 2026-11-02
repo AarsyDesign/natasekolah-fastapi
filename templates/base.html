@@ -76,7 +76,11 @@
       {% if user.role == 'TEACHER' %}
       <a href="/attendance" class="flex items-center gap-2.5 px-3 py-2 text-xs rounded-md transition-colors {% if active_menu == 'checkin' %}bg-zinc-200/80 text-black font-semibold shadow-2xs{% else %}text-zinc-600 hover:text-black hover:bg-zinc-100{% endif %}">
         <i data-lucide="clock" class="w-4 h-4"></i>
-        <span>Presensi Mandiri</span>
+        <span>Presensi Mandiri Guru</span>
+      </a>
+      <a href="/teacher/classes" class="flex items-center gap-2.5 px-3 py-2 text-xs rounded-md transition-colors {% if active_menu == 'classes' %}bg-zinc-200/80 text-black font-semibold shadow-2xs{% else %}text-zinc-600 hover:text-black hover:bg-zinc-100{% endif %}">
+        <i data-lucide="book-open" class="w-4 h-4"></i>
+        <span>Absensi Santri Kelas</span>
       </a>
       <a href="/my-history" class="flex items-center gap-2.5 px-3 py-2 text-xs rounded-md transition-colors {% if active_menu == 'my_history' %}bg-zinc-200/80 text-black font-semibold shadow-2xs{% else %}text-zinc-600 hover:text-black hover:bg-zinc-100{% endif %}">
         <i data-lucide="history" class="w-4 h-4"></i>

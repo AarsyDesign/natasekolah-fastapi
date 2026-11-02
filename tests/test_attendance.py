@@ -4,20 +4,8 @@ import sqlite3
 import os
 import secrets
 
-# Set DB test khusus
-os.environ["NATA_DB_PATH"] = "/opt/data/work/natasekolah-core/test_natasekolah.db"
-
 from server import app
 from database import init_db, get_db, haversine_distance_meters
-
-@pytest.fixture(scope="module", autouse=True)
-def setup_test_db():
-    if os.path.exists("/opt/data/work/natasekolah-core/test_natasekolah.db"):
-        os.remove("/opt/data/work/natasekolah-core/test_natasekolah.db")
-    init_db()
-    yield
-    if os.path.exists("/opt/data/work/natasekolah-core/test_natasekolah.db"):
-        os.remove("/opt/data/work/natasekolah-core/test_natasekolah.db")
 
 client = TestClient(app)
 
@@ -66,6 +54,17 @@ def test_teacher_gps_checkin_flow():
     assert "di luar jangkauan" in res_fail.json()["detail"]
 
     # 2. Check-in GPS valid (koordinat tepat di sekolah)
+    res_inst = client.get("/admin/settings", cookies={"nata_session": client.post("/login", data={"username": "admin", "password": "admin123"}, follow_redirects=False).cookies["nata_session"]})
+    # Reset koordinat sekolah ke -7.9666, 112.6326 agar presisi
+    client.post("/admin/settings", data={
+        "work_start_time": "07:15",
+        "late_cutoff_time": "07:30",
+        "work_end_time": "15:00",
+        "latitude": "-7.9666",
+        "longitude": "112.6326",
+        "radius_meters": "50"
+    }, cookies={"nata_session": client.post("/login", data={"username": "admin", "password": "admin123"}, follow_redirects=False).cookies["nata_session"]})
+
     res_success = client.post(
         "/api/attendance/check-in-gps",
         json={"latitude": -7.9666, "longitude": 112.6326, "action": "IN"},
@@ -103,7 +102,7 @@ def test_teacher_qr_checkin_flow():
         cookies={"nata_session": session_cookie}
     )
     assert res_success.status_code == 200
-    assert "Presensi Masuk via QR berhasil" in res_success.json()["message"]
+    assert "via QR berhasil dicatat" in res_success.json()["message"]
 
 def test_admin_recap_and_manual_override():
     # Login admin

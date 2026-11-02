@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+
+{% block title %}Presensi Kelas {{ assignment.classroom_name }}{% endblock %}
+{% block header_title %}Presensi Santri: {{ assignment.classroom_name }} — {{ assignment.subject_name }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Action Bar & Status Sesi -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-4 rounded-xl border border-zinc-200 bg-white shadow-2xs">
+    <div class="flex items-center gap-3">
+      <a href="/teacher/classes" class="p-2 rounded-md hover:bg-zinc-100 border border-zinc-200 text-zinc-600 transition-colors">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i>
+      </a>
+      <div>
+        <div class="flex items-center gap-2">
+          <h3 class="text-xs font-bold text-zinc-900">{{ assignment.classroom_name }}</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700 font-mono">{{ session.date }}</span>
+          {% if session.status == 'CLOSED' %}
+          <span class="text-[10px] px-2 py-0.5 rounded-md bg-zinc-900 text-white font-semibold">Terkunci (Selesai)</span>
+          {% else %}
+          <span class="text-[10px] px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Sesi Terbuka
+          </span>
+          {% endif %}
+        </div>
+        <div class="text-[11px] text-zinc-500 mt-0.5">Mapel: <b>{{ assignment.subject_name }}</b></div>
+      </div>
+    </div>
+
+    {% if session.status == 'OPEN' %}
+    <div class="flex items-center gap-2">
+      <!-- Tombol 1-Klik Tandai Semua Hadir -->
+      <form method="POST" action="/api/teacher/attendance/mark-all-present">
+        <input type="hidden" name="session_id" value="{{ session.id }}">
+        <input type="hidden" name="assignment_id" value="{{ assignment.id }}">
+        <button type="submit" class="h-9 px-3.5 rounded-md border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-800 text-xs font-medium transition-colors flex items-center gap-1.5 shadow-2xs">
+          <i data-lucide="check-check" class="w-4 h-4 text-emerald-600"></i>
+          <span>Tandai Semua Hadir</span>
+        </button>
+      </form>
+
+      <!-- Tombol Tutup Sesi & Kunci Permanen -->
+      <form method="POST" action="/api/teacher/attendance/close-session" onsubmit="return confirm('Kunci sesi absensi kelas ini? Data kehadiran tidak dapat diubah lagi setelah dikunci.');">
+        <input type="hidden" name="session_id" value="{{ session.id }}">
+        <input type="hidden" name="assignment_id" value="{{ assignment.id }}">
+        <button type="submit" class="h-9 px-3.5 rounded-md bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium transition-colors flex items-center gap-1.5 shadow-2xs">
+          <i data-lucide="lock" class="w-4 h-4"></i>
+          <span>Kunci Sesi Kelas</span>
+        </button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Statistik Cepat Kehadiran Roster -->
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+    <div class="p-3.5 rounded-xl border border-zinc-200 bg-white">
+      <div class="text-[10px] font-mono text-zinc-500 uppercase">Total Santri</div>
+      <div class="text-xl font-semibold tabular text-zinc-900 mt-0.5">{{ stats.total }}</div>
+    </div>
+    <div class="p-3.5 rounded-xl border border-zinc-200 bg-white">
+      <div class="text-[10px] font-mono text-zinc-500 uppercase">Hadir</div>
+      <div class="text-xl font-semibold tabular text-emerald-600 mt-0.5">{{ stats.present }}</div>
+    </div>
+    <div class="p-3.5 rounded-xl border border-zinc-200 bg-white">
+      <div class="text-[10px] font-mono text-zinc-500 uppercase">Sakit</div>
+      <div class="text-xl font-semibold tabular text-sky-600 mt-0.5">{{ stats.sick }}</div>
+    </div>
+    <div class="p-3.5 rounded-xl border border-zinc-200 bg-white">
+      <div class="text-[10px] font-mono text-zinc-500 uppercase">Izin</div>
+      <div class="text-xl font-semibold tabular text-amber-600 mt-0.5">{{ stats.excused }}</div>
+    </div>
+    <div class="p-3.5 rounded-xl border border-zinc-200 bg-white">
+      <div class="text-[10px] font-mono text-zinc-500 uppercase">Alpa</div>
+      <div class="text-xl font-semibold tabular text-rose-600 mt-0.5">{{ stats.absent }}</div>
+    </div>
+  </div>
+
+  <!-- Tabel Roster Santri & Quick Status Selector -->
+  <div class="rounded-xl border border-zinc-200 bg-white overflow-hidden shadow-2xs">
+    <div class="px-5 py-3.5 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+      <div class="text-xs font-semibold text-zinc-900">Daftar Presensi Santri (Roster Kelas)</div>
+      <div class="text-[11px] text-zinc-500 font-mono">{{ roster|length }} Santri</div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs">
+        <thead class="bg-zinc-50 border-b border-zinc-100 text-zinc-500 font-medium">
+          <tr>
+            <th class="px-4 py-3 w-12 text-center font-mono">No</th>
+            <th class="px-4 py-3">Nama Santri & NISN</th>
+            <th class="px-4 py-3 text-center">Status Kehadiran</th>
+            <th class="px-4 py-3">Catatan Khusus</th>
+            <th class="px-4 py-3 text-right">Aksi</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-100 text-zinc-800">
+          {% for r in roster %}
+          <tr class="hover:bg-zinc-50/70 transition-colors">
+            <td class="px-4 py-3 text-center font-mono text-zinc-400 tabular">{{ loop.index }}</td>
+            <td class="px-4 py-3">
+              <div class="font-semibold text-zinc-900">{{ r.full_name }}</div>
+              <div class="text-[11px] text-zinc-400 font-mono">NISN: {{ r.nisn or '-' }} · Gender: {{ r.gender }}</div>
+            </td>
+            <td class="px-4 py-3 text-center">
+              {% if r.status == 'PRESENT' %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                Hadir
+              </span>
+              {% elif r.status == 'SICK' %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-200">
+                Sakit
+              </span>
+              {% elif r.status == 'EXCUSED' %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                Izin
+              </span>
+              {% elif r.status == 'ABSENT' %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                Alpa
+              </span>
+              {% else %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-medium bg-zinc-100 text-zinc-500">
+                Belum Diabsen
+              </span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-zinc-500 italic max-w-xs truncate">
+              {{ r.notes or '-' }}
+            </td>
+            <td class="px-4 py-3 text-right">
+              {% if session.status == 'OPEN' %}
+              <button onclick="openStudentSidePanel('{{ r.student_id }}', '{{ r.full_name }}', '{{ r.nisn or '' }}', '{{ r.status or 'PRESENT' }}', '{{ r.notes or '' }}')"
+                      class="px-2.5 py-1 rounded-md border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 text-[11px] font-medium transition-colors shadow-2xs">
+                Panel Samping
+              </button>
+              {% else %}
+              <span class="text-[11px] text-zinc-400 font-mono">Terkunci</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- SLIDE-OVER SIDE PANEL (PANEL SAMPING ABSENSI SANTRI) -->
+<div id="student-side-panel-backdrop" onclick="closeStudentSidePanel()" class="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs transition-opacity duration-200 hidden opacity-0"></div>
+
+<div id="student-side-panel" class="fixed inset-y-0 right-0 z-50 w-full sm:w-[440px] bg-white border-l border-zinc-200 shadow-2xl flex flex-col transform translate-x-full transition-transform duration-200 ease-in-out">
+  <!-- Header Panel -->
+  <div class="h-14 px-5 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+    <div>
+      <span class="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">Panel Presensi Santri</span>
+      <h3 id="panel-student-name" class="text-xs font-bold text-zinc-900 truncate max-w-[260px]">-</h3>
+    </div>
+    <button onclick="closeStudentSidePanel()" class="p-1.5 rounded-md hover:bg-zinc-200 text-zinc-500 transition-colors">
+      <i data-lucide="x" class="w-4 h-4"></i>
+    </button>
+  </div>
+
+  <!-- Form Presensi Santri -->
+  <form id="form-student-attendance" method="POST" action="/api/teacher/attendance/update-record" class="flex-1 flex flex-col p-5 space-y-5 overflow-y-auto">
+    <input type="hidden" name="session_id" value="{{ session.id }}">
+    <input type="hidden" name="assignment_id" value="{{ assignment.id }}">
+    <input type="hidden" name="student_id" id="panel-student-id">
+
+    <div class="p-3.5 rounded-lg border border-zinc-200 bg-zinc-50 text-xs">
+      <div class="text-[11px] text-zinc-500 font-medium">Santri: <span id="info-student-name" class="font-bold text-zinc-900"></span></div>
+      <div class="text-[11px] text-zinc-400 font-mono mt-0.5">NISN: <span id="info-student-nisn"></span></div>
+    </div>
+
+    <div>
+      <label class="block text-xs font-semibold text-zinc-700 mb-2">Status Kehadiran Santri</label>
+      <div class="grid grid-cols-2 gap-2">
+        <label class="flex items-center gap-2 p-2.5 rounded-md border border-zinc-200 hover:bg-zinc-50 cursor-pointer text-xs font-medium">
+          <input type="radio" name="status" value="PRESENT" class="accent-black">
+          <span class="text-emerald-700 font-semibold">Hadir</span>
+        </label>
+        <label class="flex items-center gap-2 p-2.5 rounded-md border border-zinc-200 hover:bg-zinc-50 cursor-pointer text-xs font-medium">
+          <input type="radio" name="status" value="SICK" class="accent-black">
+          <span class="text-sky-700 font-semibold">Sakit</span>
+        </label>
+        <label class="flex items-center gap-2 p-2.5 rounded-md border border-zinc-200 hover:bg-zinc-50 cursor-pointer text-xs font-medium">
+          <input type="radio" name="status" value="EXCUSED" class="accent-black">
+          <span class="text-amber-700 font-semibold">Izin</span>
+        </label>
+        <label class="flex items-center gap-2 p-2.5 rounded-md border border-zinc-200 hover:bg-zinc-50 cursor-pointer text-xs font-medium">
+          <input type="radio" name="status" value="ABSENT" class="accent-black">
+          <span class="text-rose-700 font-semibold">Alpa (Tanpa Ket.)</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="flex-1">
+      <label class="block text-xs font-semibold text-zinc-700 mb-1.5">Catatan Perilaku / Keterangan</label>
+      <textarea name="notes" id="panel-student-notes" rows="4"
+                placeholder="Contoh: Izin ke UKS jam ke-2, surat dokter menyusul..."
+                class="w-full p-3 rounded-md border border-zinc-200 text-xs focus:ring-1 focus:ring-black placeholder:text-zinc-400"></textarea>
+    </div>
+
+    <div class="pt-4 border-t border-zinc-100 flex gap-2">
+      <button type="button" onclick="closeStudentSidePanel()" class="flex-1 h-9 rounded-md border border-zinc-200 hover:bg-zinc-100 text-xs font-medium text-zinc-700 transition-colors">
+        Batal
+      </button>
+      <button type="submit" class="flex-1 h-9 rounded-md bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium transition-colors shadow-2xs">
+        Simpan Status
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function openStudentSidePanel(id, name, nisn, status, notes) {
+    document.getElementById('panel-student-id').value = id;
+    document.getElementById('panel-student-name').innerText = name;
+    document.getElementById('info-student-name').innerText = name;
+    document.getElementById('info-student-nisn').innerText = nisn || '-';
+    document.getElementById('panel-student-notes').value = notes || '';
+
+    // Set radio
+    const radios = document.getElementsByName('status');
+    for (const r of radios) {
+      if (r.value === status) {
+        r.checked = true;
+      }
+    }
+
+    const backdrop = document.getElementById('student-side-panel-backdrop');
+    const panel = document.getElementById('student-side-panel');
+
+    backdrop.classList.remove('hidden');
+    setTimeout(() => {
+      backdrop.classList.remove('opacity-0');
+      backdrop.classList.add('opacity-100');
+      panel.classList.remove('translate-x-full');
+      panel.classList.add('translate-x-0');
+    }, 10);
+  }
+
+  function closeStudentSidePanel() {
+    const backdrop = document.getElementById('student-side-panel-backdrop');
+    const panel = document.getElementById('student-side-panel');
+
+    panel.classList.remove('translate-x-0');
+    panel.classList.add('translate-x-full');
+    backdrop.classList.remove('opacity-100');
+    backdrop.classList.add('opacity-0');
+
+    setTimeout(() => {
+      backdrop.classList.add('hidden');
+    }, 200);
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeStudentSidePanel();
+  });
+</script>
+{% endblock %}

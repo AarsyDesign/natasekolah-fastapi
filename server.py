@@ -551,6 +551,243 @@ async def admin_manual_attendance(
 
     return RedirectResponse(url=f"/admin/recap?date={date}", status_code=303)
 
+# GURU: DAFTAR KELAS & JADWAL MENGAJAR
+@app.get("/teacher/classes", response_class=HTMLResponse)
+async def teacher_classes_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
+    if user["role"] not in ["TEACHER", "ADMIN"]:
+        return RedirectResponse(url="/attendance")
+
+    conn = get_db()
+    cur = conn.cursor()
+    # Jika admin, bisa lihat semua penugasan; jika guru, penugasan miliknya
+    if user["role"] == "ADMIN":
+        cur.execute("""
+            SELECT a.id as assignment_id, c.name as classroom_name, c.level, c.academic_year,
+                   s.name as subject_name,
+                   (SELECT COUNT(*) FROM students std WHERE std.classroom_id = c.id AND std.is_active = 1) as total_students
+            FROM teacher_assignments a
+            JOIN classrooms c ON a.classroom_id = c.id
+            JOIN subjects s ON a.subject_id = s.id
+            WHERE a.institution_id = ?
+            ORDER BY c.name ASC
+        """, (user["institution_id"],))
+    else:
+        cur.execute("""
+            SELECT a.id as assignment_id, c.name as classroom_name, c.level, c.academic_year,
+                   s.name as subject_name,
+                   (SELECT COUNT(*) FROM students std WHERE std.classroom_id = c.id AND std.is_active = 1) as total_students
+            FROM teacher_assignments a
+            JOIN classrooms c ON a.classroom_id = c.id
+            JOIN subjects s ON a.subject_id = s.id
+            WHERE a.institution_id = ? AND a.teacher_id = ?
+            ORDER BY c.name ASC
+        """, (user["institution_id"], user["id"]))
+
+    classes = [dict(r) for r in cur.fetchall()]
+    conn.close()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="teacher_classes.html",
+        context={
+            "user": user,
+            "active_menu": "classes",
+            "classes": classes
+        }
+    )
+
+# GURU: LEMBAR ABSENSI SANTRI DALAM KELAS
+@app.get("/teacher/attendance/{assignment_id}", response_class=HTMLResponse)
+async def teacher_student_attendance_page(request: Request, assignment_id: str, date: Optional[str] = None):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
+
+    today_str = date or datetime.now().strftime("%Y-%m-%d")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Ambil detail assignment
+    cur.execute("""
+        SELECT a.id, a.classroom_id, c.name as classroom_name, s.name as subject_name
+        FROM teacher_assignments a
+        JOIN classrooms c ON a.classroom_id = c.id
+        JOIN subjects s ON a.subject_id = s.id
+        WHERE a.id = ? AND a.institution_id = ?
+    """, (assignment_id, user["institution_id"]))
+    assignment = cur.fetchone()
+    if not assignment:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Jadwal mengajar tidak ditemukan.")
+    assignment = dict(assignment)
+
+    # Ambil atau buat session absensi hari ini
+    cur.execute("""
+        SELECT * FROM student_attendance_sessions
+        WHERE assignment_id = ? AND date = ?
+    """, (assignment_id, today_str))
+    session_row = cur.fetchone()
+
+    if not session_row:
+        session_id = "sess_" + secrets.token_hex(6)
+        conn.execute("""
+            INSERT INTO student_attendance_sessions (id, institution_id, assignment_id, date, status)
+            VALUES (?, ?, ?, ?, 'OPEN')
+        """, (session_id, user["institution_id"], assignment_id, today_str))
+        conn.commit()
+        cur.execute("SELECT * FROM student_attendance_sessions WHERE id = ?", (session_id,))
+        session_row = cur.fetchone()
+
+    session_row = dict(session_row)
+
+    # Ambil seluruh santri di kelas beserta status absensi sesi ini
+    cur.execute("""
+        SELECT s.id as student_id, s.full_name, s.nisn, s.gender,
+               r.status, r.notes
+        FROM students s
+        LEFT JOIN student_attendance_records r ON s.id = r.student_id AND r.session_id = ?
+        WHERE s.classroom_id = ? AND s.is_active = 1
+        ORDER BY s.full_name ASC
+    """, (session_row["id"], assignment["classroom_id"]))
+    roster = [dict(r) for r in cur.fetchall()]
+    conn.close()
+
+    total = len(roster)
+    present = sum(1 for r in roster if r["status"] == "PRESENT")
+    sick = sum(1 for r in roster if r["status"] == "SICK")
+    excused = sum(1 for r in roster if r["status"] == "EXCUSED")
+    absent = sum(1 for r in roster if r["status"] == "ABSENT")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="teacher_student_attendance.html",
+        context={
+            "user": user,
+            "active_menu": "classes",
+            "assignment": assignment,
+            "session": session_row,
+            "roster": roster,
+            "stats": {
+                "total": total,
+                "present": present,
+                "sick": sick,
+                "excused": excused,
+                "absent": absent
+            }
+        }
+    )
+
+# API: UPDATE STATUS SANTRI DARI PANEL SAMPING
+@app.post("/api/teacher/attendance/update-record")
+async def api_update_student_record(
+    request: Request,
+    session_id: str = Form(...),
+    assignment_id: str = Form(...),
+    student_id: str = Form(...),
+    status: str = Form(...),
+    notes: Optional[str] = Form(None)
+):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Harap login.")
+
+    conn = get_db()
+    cur = conn.cursor()
+    # Cek apakah sesi masih OPEN
+    cur.execute("SELECT status FROM student_attendance_sessions WHERE id = ?", (session_id,))
+    s_row = cur.fetchone()
+    if not s_row or s_row["status"] == "CLOSED":
+        conn.close()
+        raise HTTPException(status_code=400, detail="Sesi absensi sudah dikunci.")
+
+    cur.execute("SELECT id FROM student_attendance_records WHERE session_id = ? AND student_id = ?", (session_id, student_id))
+    rec = cur.fetchone()
+
+    if rec:
+        conn.execute("""
+            UPDATE student_attendance_records
+            SET status = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (status, notes, rec["id"]))
+    else:
+        rec_id = "rec_" + secrets.token_hex(6)
+        conn.execute("""
+            INSERT INTO student_attendance_records (id, session_id, student_id, status, notes)
+            VALUES (?, ?, ?, ?, ?)
+        """, (rec_id, session_id, student_id, status, notes))
+
+    conn.commit()
+    conn.close()
+
+    return RedirectResponse(url=f"/teacher/attendance/{assignment_id}", status_code=303)
+
+# API: TANDAI SEMUA HADIR 1-KLIK
+@app.post("/api/teacher/attendance/mark-all-present")
+async def api_mark_all_present(
+    request: Request,
+    session_id: str = Form(...),
+    assignment_id: str = Form(...)
+):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Harap login.")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT status FROM student_attendance_sessions WHERE id = ?", (session_id,))
+    s_row = cur.fetchone()
+    if not s_row or s_row["status"] == "CLOSED":
+        conn.close()
+        raise HTTPException(status_code=400, detail="Sesi absensi sudah dikunci.")
+
+    # Ambil semua student_id di assignment ini
+    cur.execute("""
+        SELECT s.id FROM students s
+        JOIN teacher_assignments a ON s.classroom_id = a.classroom_id
+        WHERE a.id = ? AND s.is_active = 1
+    """, (assignment_id,))
+    student_ids = [r[0] for r in cur.fetchall()]
+
+    for sid in student_ids:
+        cur.execute("SELECT id FROM student_attendance_records WHERE session_id = ? AND student_id = ?", (session_id, sid))
+        rec = cur.fetchone()
+        if rec:
+            conn.execute("UPDATE student_attendance_records SET status = 'PRESENT', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (rec["id"],))
+        else:
+            rec_id = "rec_" + secrets.token_hex(6)
+            conn.execute("""
+                INSERT INTO student_attendance_records (id, session_id, student_id, status)
+                VALUES (?, ?, ?, 'PRESENT')
+            """, (rec_id, session_id, sid))
+
+    conn.commit()
+    conn.close()
+
+    return RedirectResponse(url=f"/teacher/attendance/{assignment_id}", status_code=303)
+
+# API: KUNCI SESI KELAS
+@app.post("/api/teacher/attendance/close-session")
+async def api_close_session(
+    request: Request,
+    session_id: str = Form(...),
+    assignment_id: str = Form(...)
+):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Harap login.")
+
+    conn = get_db()
+    conn.execute("UPDATE student_attendance_sessions SET status = 'CLOSED' WHERE id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+
+    return RedirectResponse(url=f"/teacher/attendance/{assignment_id}", status_code=303)
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
